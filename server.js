@@ -348,7 +348,7 @@ const server = http.createServer(async (req, res) => {
 
     if (pathname === '/api/backtest' && req.method === 'GET') {
       const code = url.searchParams.get('code');
-      const days = Number(url.searchParams.get('days')) || 500;
+      const days = url.searchParams.get('days') || undefined;
       const capital = Number(url.searchParams.get('capital')) || 1_000_000;
       return sendJson(res, 200, await quant.compositeBacktest(code, { days, capital }));
     }
@@ -365,7 +365,7 @@ const server = http.createServer(async (req, res) => {
     return fail(res, 404, '接口不存在');
   } catch (err) {
     const message = err && err.message ? err.message : '服务内部错误';
-    const status = /请求体|代码需|不支持/.test(message) ? 400 : 502;
+    const status = /请求体|代码需|不支持|回测交易日/.test(message) ? 400 : 502;
     if (status === 502) console.error('[api]', pathname, message);
     return fail(res, status, message);
   }

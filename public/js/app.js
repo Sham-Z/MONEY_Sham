@@ -87,7 +87,12 @@ const state = {
   picks: {
     data: null,
     loading: false,
+    quotesLoading: false,
     timer: null,
+    lastRankRequest: 0,
+    quotesUpdatedAt: null,
+    rankStale: false,
+    quoteStale: false,
     filters: { minPrice: 2, maxPrice: 800, minMarketCap: 0, maxMarketCap: 100000 },
   },
   trade: { account: null, prices: {}, timer: null },
@@ -490,9 +495,24 @@ function syncPicksFilterInputs() {
   });
 }
 
+function picksClock(value) {
+  return value ? new Date(value).toLocaleTimeString('zh-CN', { hour12: false }) : '--';
+}
+
+function updatePicksTimeLabels() {
+  if (!state.picks.data) return;
+  const m = state.picks.data.meta || {};
+  const quoteTime = picksClock(state.picks.quotesUpdatedAt);
+  const rankTime = picksClock(m.asOf);
+  const stale = state.picks.rankStale || state.picks.quoteStale ? ' · 保留旧数据' : '';
+  $('#picksUpdated').textContent = `行情 ${quoteTime} · 排名 ${rankTime}${stale}`;
+  $('#marketPicksHint').textContent = `行情 ${quoteTime} · 排名 ${rankTime} · 候选 ${m.candidates ?? 0} 只 · 9 策略综合${stale}`;
+}
+
 async function loadPicks(force = false) {
   if (state.picks.loading) return;
   state.picks.loading = true;
+  state.picks.lastRankRequest = Date.now();
   $('#applyPicksFilters').disabled = true;
   if (!state.picks.data) {
     $('#marketPicksGrid').innerHTML = '<div class="empty">正在计算多策略综合评分…</div>';
@@ -503,13 +523,23 @@ async function loadPicks(force = false) {
   try {
     const data = await apiGet(`/api/picks?${query}`);
     state.picks.data = data;
+    state.picks.rankStale = Boolean(data.stale);
+    if (!data.stale) {
+      state.picks.quotesUpdatedAt = data.meta?.asOf || new Date().toISOString();
+      state.picks.quoteStale = false;
+    }
     renderMarketPicks(data);
     renderPicks(data);
-    if (force) toast('荐股榜单已刷新');
+    if (force) toast(data.stale ? '榜单重排失败，已保留上一成功榜单' : '荐股榜单已刷新', data.stale);
   } catch (err) {
-    $('#marketPicksGrid').innerHTML = `<div class="empty">榜单加载失败：${esc(err.message)}</div>`;
-    $('#picksTable tbody').innerHTML = `<tr><td colspan="9" class="empty">榜单加载失败：${esc(err.message)}</td></tr>`;
-    $('#picksUpdated').textContent = '加载失败';
+    if (state.picks.data) {
+      state.picks.rankStale = true;
+      updatePicksTimeLabels();
+    } else {
+      $('#marketPicksGrid').innerHTML = `<div class="empty">榜单加载失败：${esc(err.message)}</div>`;
+      $('#picksTable tbody').innerHTML = `<tr><td colspan="9" class="empty">榜单加载失败：${esc(err.message)}</td></tr>`;
+      $('#picksUpdated').textContent = '加载失败';
+    }
     if (force) toast(`榜单刷新失败：${err.message}`, true);
   } finally {
     state.picks.loading = false;
@@ -523,8 +553,7 @@ function renderMarketPicks(data) {
     $('#marketPicksGrid').innerHTML = '<div class="empty">暂无可展示的荐股结果</div>';
     return;
   }
-  const m = data.meta || {};
-  $('#marketPicksHint').textContent = `${new Date(m.asOf).toLocaleTimeString('zh-CN', { hour12: false })} 更新 · 候选 ${m.candidates} 只 · 9 策略综合`;
+  updatePicksTimeLabels();
   $('#marketPicksGrid').innerHTML = items
     .map(
       (r, i) => `<div class="pick-mini" data-code="${esc(r.code)}">
@@ -550,7 +579,7 @@ function renderMarketPicks(data) {
 function renderPicks(data) {
   const m = data.meta || {};
   const items = data.items || [];
-  $('#picksUpdated').textContent = `${new Date(m.asOf).toLocaleTimeString('zh-CN', { hour12: false })} 更新`;
+  updatePicksTimeLabels();
   $('#picksMeta').innerHTML = `
     <span>扫描股票<b>${m.scanned ?? 0}</b></span>
     <span>通过过滤<b>${m.filtered ?? 0}</b></span>
@@ -559,7 +588,7 @@ function renderPicks(data) {
     <span>市场温度<b>${m.market?.regime || '--'} (${m.market?.breadth ?? '--'}%)</b></span>
     <span>参与策略<b>${m.strategyCount ?? 9}</b></span>
     <span>耗时<b>${m.elapsedMs ?? 0} ms</b></span>`;
-  $('#picksNote').textContent = data.disclaimer || '';
+  $('#picksNote').textContent = `${data.disclaimer || ''} 行情每 4 秒自动更新，完整九策略排名每 60 秒重算；页面隐藏或离开后暂停请求。`;
   const f = m.filters || state.picks.filters;
   $('#picksFilterSummary').textContent = `当前：股价 ${f.minPrice}–${f.maxPrice} 元，总市值 ${f.minMarketCap}–${f.maxMarketCap} 亿元；同时应用于首页荐股榜。`;
 
@@ -598,6 +627,64 @@ function renderPicks(data) {
     .join('');
 }
 
+const PICK_QUOTE_FIELDS = [
+  'price', 'change', 'changePct', 'open', 'high', 'low', 'prevClose',
+  'volume', 'amount', 'turnoverRate', 'pe', 'pb', 'totalCap', 'floatCap', 'time',
+];
+
+async function refreshPicksQuotes() {
+  if (!state.picks.data || state.picks.quotesLoading) return;
+  const codes = [...new Set((state.picks.data.items || []).map((item) => item.code).filter(Boolean))];
+  if (!codes.length) return;
+  state.picks.quotesLoading = true;
+  try {
+    const data = await apiGet(`/api/quotes?codes=${codes.join(',')}`);
+    const quotesByCode = new Map((data.items || []).map((quote) => [quote.code, quote]));
+    const items = (state.picks.data.items || []).map((item) => {
+      const quote = quotesByCode.get(item.code);
+      if (!quote) return item;
+      const live = {};
+      for (const field of PICK_QUOTE_FIELDS) {
+        if (quote[field] !== undefined) live[field] = quote[field];
+      }
+      return { ...item, ...live, name: quote.name || item.name };
+    });
+    state.picks.data = { ...state.picks.data, items };
+    state.picks.quotesUpdatedAt = new Date().toISOString();
+    state.picks.quoteStale = false;
+    renderMarketPicks(state.picks.data);
+    renderPicks(state.picks.data);
+  } catch {
+    state.picks.quoteStale = true;
+    updatePicksTimeLabels();
+  } finally {
+    state.picks.quotesLoading = false;
+  }
+}
+
+function picksRouteActive() {
+  const hash = location.hash || '#/market';
+  return hash.startsWith('#/picks') || hash.startsWith('#/market');
+}
+
+function runPicksAutoRefresh() {
+  if (!picksRouteActive() || document.hidden) return;
+  refreshPicksQuotes();
+  if (!state.picks.data || Date.now() - state.picks.lastRankRequest >= 60_000) loadPicks();
+}
+
+function stopPicksAutoRefresh() {
+  clearInterval(state.picks.timer);
+  state.picks.timer = null;
+}
+
+function syncPicksAutoRefresh() {
+  stopPicksAutoRefresh();
+  if (!picksRouteActive()) return;
+  runPicksAutoRefresh();
+  state.picks.timer = setInterval(runPicksAutoRefresh, 4_000);
+}
+
 /* ------------------------------ 个股分析 ------------------------------ */
 
 function setStockRoute(code) {
@@ -614,7 +701,7 @@ function syncIntradayAutoRefresh() {
   if (state.stock.period !== 'min' || !state.stock.code || !location.hash.startsWith('#/stock')) return;
   state.stock.intradayTimer = setInterval(() => {
     if (!document.hidden) loadIntraday(state.stock.code, { silent: true });
-  }, 30_000);
+  }, 4_000);
 }
 
 async function loadStock(code, period = state.stock.period) {
@@ -704,7 +791,7 @@ function renderChanPanel(detail) {
       <span>最近信号 <b class="${point?.side === 'buy' ? 'up' : point?.side === 'sell' ? 'down' : ''}">${point ? `${esc(point.type)} · ${esc(point.confirmDate)}` : '等待确认'}</b></span>
     </div>
     <ul>${(c.descriptions || []).map((text) => `<li>${esc(text)}</li>`).join('')}</ul>
-    ${sector ? `<div class="chan-sector">板块情绪：${esc(sector.boardName || '行业数据降级')} · ${esc(sector.state || '中性')} ${fmt.price(sector.score)} 分，环境修正 ${fmt.signed(sector.adjustment || 0, 1)} 分。${esc(sector.available === false ? '当前按中性值降级，不影响原策略。' : '实时涨跌家数仅展示，不参与历史分。')}</div>` : ''}
+    ${sector ? `<div class="chan-sector">板块情绪：${esc(sector.boardName || sector.industryName || '行业数据降级')} · ${esc(sector.state || '中性')} ${fmt.price(sector.score)} 分，环境修正 ${fmt.signed(sector.adjustment || 0, 1)} 分。${esc(sector.available === false ? '当前按中性值降级，不影响原策略。' : '实时涨跌家数仅展示，不参与历史分。')}</div>` : ''}
     <p class="fineprint">缠论为固定规则的工程化近似，不覆盖所有主观流派与完整多级别递归；分型、笔和买卖点均有右侧确认滞后，禁止用极值日事后倒填信号。</p>`;
 }
 
@@ -774,7 +861,7 @@ function renderAdvice(d) {
       </div>
     </div>
     ${sector ? `<div class="sector-strip">
-      <div><span>所属行业</span><b>${esc(sector.boardName || '暂不可用')}</b></div>
+      <div><span>所属行业</span><b>${esc(sector.boardName || sector.industryName || '暂不可用')}</b></div>
       <div><span>短线板块情绪</span><b>${esc(sector.state || '中性')} · ${fmt.price(sector.score)} 分</b></div>
       <div><span>综合分环境修正</span><b>${fmt.signed(sector.adjustment || 0, 1)} 分</b></div>
       <div><span>板块上涨 / 下跌家数</span><b>${sector.breadth ? `${sector.breadth.upCount ?? '--'} / ${sector.breadth.downCount ?? '--'}` : '仅实时展示，暂不可用'}</b></div>
@@ -843,13 +930,13 @@ function renderIntradaySummary(d) {
       <span>买卖点 <b><i class="dot-buy"></i>${s.buyCount || 0} / <i class="dot-sell"></i>${s.sellCount || 0}</b></span>
       <span>量比 / OBV <b>${fmt.price(s.volRatio)} / ${fmt.signed(s.obvStrength)}</b></span>
       <span>5 分钟缠论 <b>${d.chan?.latestPoint ? `${esc(d.chan.latestPoint.type)} · ${esc(d.chan.latestPoint.confirmTime || d.chan.latestPoint.confirmDate)}` : esc(d.chan?.trend || '等待确认')}</b></span>
-      <span>板块情绪 <b>${d.sector ? `${esc(d.sector.boardName || '中性降级')} · ${esc(d.sector.state || '中性')} ${fmt.price(d.sector.score)}` : '--'}</b></span>
+      <span>板块情绪 <b>${d.sector ? `${esc(d.sector.boardName || d.sector.industryName || '中性降级')} · ${esc(d.sector.state || '中性')} ${fmt.price(d.sector.score)}` : '--'}</b></span>
       <span>高位禁买 / 低位禁卖 <b>${s.blockedBuy || 0} / ${s.blockedSell || 0}</b></span>
       <span>数据时间 <b>${esc(d.dataTime || '--')}</b></span>
       <span>数据源 <b>${esc(d.source || '--')}</b></span>
     </div>
     <div class="marker-list">${markers || '<span class="hint">当日暂未触发多策略共识买卖点</span>'}</div>
-    <p class="fineprint intraday-live" id="intradayLiveNote">${esc(d.live?.note || '分钟快照每 30 秒刷新，非逐笔实时信号。')}</p>`;
+    <p class="fineprint intraday-live" id="intradayLiveNote">${esc(d.live?.note || '分钟快照每 4 秒刷新并重算买卖点，非逐笔实时信号。')}</p>`;
 }
 
 
@@ -956,10 +1043,15 @@ async function onSearchInput(value) {
 
 async function runBacktest() {
   if (!state.stock.code) return;
+  const rawDays = $('#btDays').value.trim();
+  const days = rawDays === '' ? 500 : Number(rawDays);
+  if (!Number.isInteger(days) || days < 60 || days > 800) {
+    toast('回测交易日需为 60–800 的整数', true);
+    return;
+  }
   const btn = $('#runBacktest');
   btn.disabled = true;
   btn.textContent = '综合回测中…';
-  const days = Number($('#btDays').value) || 500;
   try {
     const qs = new URLSearchParams({ code: state.stock.code, days: String(days) });
     const data = await apiGet(`/api/backtest?${qs}`);
@@ -984,6 +1076,7 @@ function renderBacktest(data) {
     ['交易次数', String(m.tradeCount), 0],
     ['基准收益', fmt.pct(m.benchmarkReturn), m.benchmarkReturn],
     ['期末资金', fmt.money(m.finalEquity), m.finalEquity - m.capital],
+    ['实际交易日', `${data.walkForward?.actualTestDays ?? data.daily?.length ?? '--'} 天`, 0],
   ];
   $('#btMetrics').innerHTML = cards
     .map(([k, v, dir]) => `<div class="metric"><span>${k}</span><b class="${cls(dir)}">${v}</b></div>`)
@@ -1007,7 +1100,7 @@ function renderBacktest(data) {
   $('#btComposite').innerHTML = `
     <div class="bt-context">
       <span>最新综合分 <b>${fmt.price(data.composite?.score)}</b></span>
-      <span>板块环境 <b>${esc(sector.boardName || '中性降级')} · ${esc(sector.state || '中性')} ${fmt.price(sector.score)}</b></span>
+      <span>板块环境 <b>${esc(sector.boardName || sector.industryName || '中性降级')} · ${esc(sector.state || '中性')} ${fmt.price(sector.score)}</b></span>
       <span>环境修正 <b>${fmt.signed(sector.adjustment || 0, 1)} 分</b></span>
       <span>调权区间 <b>${esc(walk.lastTraining?.start || '--')} 至 ${esc(walk.lastTraining?.end || '--')}</b></span>
     </div>
@@ -1457,16 +1550,7 @@ function setView(view) {
   if (titles[view]) document.title = `${titles[view]} · MONEY 量化终端`;
   if (view === 'stock') syncIntradayAutoRefresh();
   else stopIntradayAutoRefresh();
-  if (view === 'picks' || view === 'market') {
-    if (!state.picks.data) loadPicks();
-    clearInterval(state.picks.timer);
-    state.picks.timer = setInterval(() => {
-      const h = location.hash;
-      if ((h.startsWith('#/picks') || h.startsWith('#/market')) && !state.picks.loading) loadPicks();
-    }, 180_000);
-  } else {
-    clearInterval(state.picks.timer);
-  }
+  syncPicksAutoRefresh();
   if (view === 'trade') {
     refreshPrices();
     clearInterval(state.trade.timer);
@@ -1523,6 +1607,13 @@ function route() {
 
 function bindEvents() {
   window.addEventListener('hashchange', route);
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) return;
+    if (picksRouteActive()) runPicksAutoRefresh();
+    if (location.hash.startsWith('#/stock') && state.stock.period === 'min' && state.stock.code) {
+      loadIntraday(state.stock.code, { silent: true });
+    }
+  });
 
   // 行情总览
   $('#quoteSort').addEventListener('change', (e) => {
