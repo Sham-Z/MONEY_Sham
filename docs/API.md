@@ -55,7 +55,7 @@
 | `period` | `day` | `day` / `week` / `month` |
 | `count` | 250 | 最多 520 根 |
 
-返回 `series`：`dates`、`bars`、`ma{ma5,ma10,ma20,ma60}`、`rsi`、`macd{dif,dea,hist}`。
+返回 `series`：`dates`、`bars`、`ma{ma5,ma10,ma20,ma60}`、`rsi`、`macd{dif,dea,hist}`、`chan`。其中 `chan` 包含已确认 `fractals`、`strokes`、`pivots`、`points`、因果 `signals`、摘要与文字说明；买卖点同时给出 `sourceIndex` 和 `confirmIndex`，页面只在确认位置绘制信号。
 
 ## GET /api/stock
 
@@ -88,7 +88,7 @@
 
 ## GET /api/strategies
 
-返回 8 个可选策略的 `key`、名称、标签、参考来源、说明、参数与入选阈值。
+返回原 8 策略与 `chan_theory` 共 9 个选股策略的 `key`、名称、标签、参考来源、说明、参数与入选阈值。该接口用于选股；对外回测不提供策略选择。
 
 ```json
 {
@@ -188,7 +188,7 @@
 
 ## GET /api/picks
 
-多策略综合荐股榜单。对同一候选池同时运行统一 8 个技术策略，按 `0.72 × 平均得分 + 0.28 × 达标策略占比 × 100` 聚合，缓存 3 分钟；筛选条件参与缓存 key。
+多策略综合荐股榜单。对同一候选池同时运行统一 9 个技术策略，按 `0.72 × 平均得分 + 0.28 × 达标策略占比 × 100` 聚合，缓存 3 分钟；筛选条件参与缓存 key。
 
 | 参数 | 默认 | 说明 |
 | --- | --- | --- |
@@ -212,7 +212,7 @@
   }],
   "strategyStats": [{ "key": "volume_price", "name": "量价共振", "avgScore": 57.5, "passCount": 12, "passRate": 20 }],
   "meta": {
-    "strategyCount": 8, "candidates": 60, "scanned": 600, "filtered": 402,
+    "strategyCount": 9, "candidates": 60, "scanned": 600, "filtered": 402,
     "evaluated": 90, "market": { "regime": "震荡", "breadth": 46 },
     "filters": { "minPrice": 5, "maxPrice": 80, "minMarketCap": 100, "maxMarketCap": 3000 },
     "asOf": "2026-11-20T15:01:00.000Z", "elapsedMs": 1380
@@ -222,7 +222,7 @@
 
 ## GET /api/stock/advice
 
-个股多策略综合建议。对同一只股票运行统一 8 个回测策略，用「胜率 × 盈利质量 × 盈亏比」归一化得到权重，再把各策略当前持仓/空仓信号加权为「买入 / 持有 / 卖出」。
+个股多策略综合建议。对同一只股票运行统一 9 个回测策略，用「胜率 × 盈利质量 × 盈亏比」归一化得到权重，再把各策略当前持仓/空仓信号加权。板块情绪仅作 ±4 分环境修正，最终映射为「买入 / 持有 / 卖出」；板块请求失败按中性 50 分、修正 0 降级，不影响九策略原始信号。
 
 | 参数 | 默认 | 说明 |
 | --- | --- | --- |
@@ -234,14 +234,20 @@
   "ok": true,
   "code": "600519", "name": "贵州茅台",
   "action": "hold", "actionLabel": "持有", "tone": "warn",
-  "score": 49.7, "confidence": 77,
+  "score": 51.7, "baseScore": 49.7, "sectorAdjustment": 2, "confidence": 77,
+  "sector": {
+    "available": true, "boardCode": "BK0475", "boardName": "酿酒行业",
+    "score": 75, "state": "活跃", "adjustment": 2,
+    "breadth": { "upCount": 20, "downCount": 10 },
+    "currentConstituent": true
+  },
   "consensus": {
-    "total": 8, "longCount": 4, "flatCount": 4,
+    "total": 9, "longCount": 4, "flatCount": 5,
     "bullWeightPct": 36.6, "bearWeightPct": 63.4, "label": "策略分歧，等待确认"
   },
   "topStrategy": { "key": "bollinger", "name": "布林带回归", "weight": 30.5 },
-  "reasons": ["4/8 个策略当前持仓，多头权重 36.6%", "布林带回归：胜率 66.7% · 区间收益 51.2% · 当前空仓"],
-  "warnings": ["策略信号分歧：4/8 个策略当前持仓"],
+  "reasons": ["4/9 个策略当前持仓，多头权重 36.6%", "板块情绪活跃 75 分，综合分 49.7 → 51.7（环境 +2）"],
+  "warnings": ["策略信号分歧：4/9 个策略当前持仓"],
   "strategies": [{
     "key": "ma_cross", "name": "双均线趋势", "weight": 7.5,
     "signal": "long", "signalLabel": "持仓", "fresh": false,
@@ -259,7 +265,7 @@
 
 ## GET /api/intraday
 
-当日分时数据与统一 8 策略的分钟级买卖点。数据优先取腾讯当日分时，失败时回退新浪 5 分钟线。后端分钟数据缓存 30 秒，前端每 30 秒静默轮询；这是分钟快照自动更新，不是逐笔实时推送，公开行情也可能延迟。
+当日分时数据与统一 9 策略的分钟级买卖点。分钟线聚合为 5 分钟 OHLC 后复用缠论分析，已确认买卖点作为第 9 票映射回确认分钟；板块情绪仅展示，不独立触发交易。数据优先取腾讯当日分时，失败时回退新浪 5 分钟线。后端分钟数据缓存 30 秒，前端每 30 秒静默轮询；这是分钟快照自动更新，不是逐笔实时推送，公开行情也可能延迟。
 
 | 参数 | 说明 |
 | --- | --- |
@@ -278,7 +284,12 @@
     "score": 2.7, "count": 2, "strategies": ["ma_cross", "volume_price"],
     "reasons": ["双均线趋势·分钟均线金叉", "量价共振·OBV 转强且放量"]
   }],
-  "strategyUniverse": [{ "key": "volume_price", "name": "量价共振" }],
+  "strategyUniverse": [{ "key": "volume_price", "name": "量价共振" }, { "key": "chan_theory", "name": "缠论结构" }],
+  "chan": {
+    "trend": "上升笔", "position": "中枢上方", "fiveMinuteBars": 49,
+    "latestPoint": { "type": "2B", "side": "buy", "confirmIndex": 40, "confirmTime": "14:20" }
+  },
+  "sector": { "available": true, "boardName": "酿酒行业", "score": 75, "state": "活跃", "adjustment": 2 },
   "summary": {
     "stance": "偏多", "score": 2.1, "buyCount": 2, "sellCount": 2,
     "aboveVwap": true, "rsi": 63.2, "ma5": 1481.4, "ma20": 1470.8,
@@ -328,24 +339,30 @@
 
 ## GET /api/backtest
 
-| 参数 | 说明 |
-| --- | --- |
-| `code` | 股票代码 |
-| `strategy` | `ma_cross` / `macd` / `momentum` / `breakout` / `rsi_reversion` / `bollinger` / `kdj` / `volume_price` |
-| `days` | 回测区间交易日数（120–800） |
-| `fast` `slow` `signal` `period` `mult` `low` `high` `entry` `exit` | 策略参数 |
+只运行“多策略综合建议”的 walk-forward 组合回测，不再提供单策略或指标参数选择。每 20 个交易日调权，每次仅使用调权日前一交易日及以前最多 400 日数据，按 65% 回测质量 + 35% 等权确定九策略权重。综合分叠加与实时建议一致的板块有界修正，≥64 买入、≤44 卖出，中间保持；收盘确认信号，下一交易日开盘成交。
+
+| 参数 | 默认 | 说明 |
+| --- | --- | --- |
+| `code` | 必填 | 6 位股票代码 |
+| `days` | 500 | 回测区间交易日数（120–800） |
+| `capital` | 1000000 | 初始资金 |
+
+旧 `strategy`、`fast`、`slow`、`period` 等参数即使传入也会被忽略。返回 `strategy: "composite"`、指标、交易、曲线、最新权重、板块摘要与滚动训练元数据：
 
 ```json
 {
+  "strategy": "composite", "strategyName": "多策略综合建议",
   "metrics": {
-    "totalReturn": -0.09, "annualized": -0.05, "maxDrawdown": -20.41, "sharpe": 0.06,
-    "winRate": 33.3, "tradeCount": 30, "closedTrades": 15, "profitFactor": 1.42,
-    "avgWinPct": 4.1, "avgLossPct": -2.8, "exposure": 58.2,
-    "benchmarkReturn": 4.31, "finalEquity": 999087.88
+    "totalReturn": 12.4, "annualized": 6.3, "maxDrawdown": -15.2, "sharpe": 0.8,
+    "winRate": 55.6, "tradeCount": 18, "closedTrades": 9, "profitFactor": 1.6,
+    "benchmarkReturn": 8.1, "finalEquity": 1124000
   },
-  "current": { "signal": 0, "label": "空仓", "daysSinceChange": 6, "date": "2026-11-20" },
+  "current": { "signal": 1, "label": "持仓", "date": "2026-11-20" },
+  "weights": [{ "key": "chan_theory", "name": "缠论结构", "weight": 12.4 }],
+  "sector": { "available": true, "boardName": "酿酒行业", "score": 75, "state": "活跃", "adjustment": 2 },
+  "walkForward": { "rebalanceEvery": 20, "trainingDays": 400, "rebalanceCount": 25 },
   "curve": [{ "date": "2024-12-02", "equity": 1.0, "benchmark": 1.0 }],
-  "trades": [{ "date": "2025-01-06", "side": "buy", "price": 1485.7, "shares": 600, "amount": 891420, "pnl": null }]
+  "trades": [{ "signalDate": "2025-01-03", "date": "2025-01-06", "side": "buy", "price": 1485.7, "shares": 600 }]
 }
 ```
 

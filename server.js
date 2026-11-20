@@ -348,14 +348,9 @@ const server = http.createServer(async (req, res) => {
 
     if (pathname === '/api/backtest' && req.method === 'GET') {
       const code = url.searchParams.get('code');
-      const strategy = url.searchParams.get('strategy') || 'ma_cross';
       const days = Number(url.searchParams.get('days')) || 500;
-      const params = {};
-      for (const key of ['fast', 'slow', 'period', 'low', 'high', 'entry', 'exit']) {
-        const v = url.searchParams.get(key);
-        if (v != null && v !== '') params[key] = Number(v);
-      }
-      return sendJson(res, 200, await quant.backtest(code, { strategy, params, days }));
+      const capital = Number(url.searchParams.get('capital')) || 1_000_000;
+      return sendJson(res, 200, await quant.compositeBacktest(code, { days, capital }));
     }
 
     if (pathname === '/api/metrics' && req.method === 'GET') {

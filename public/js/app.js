@@ -80,7 +80,7 @@ const state = {
   screenLoading: false,
   stock: {
     code: '', name: '', period: 'day', series: null, detail: null,
-    strategy: 'ma_cross', btDays: 500, layout: null,
+    btDays: 500, layout: null,
     intraday: null, advice: null, adviceLoading: false, intradayLayout: null,
     intradayTimer: null, intradayLoadingCode: '',
   },
@@ -496,7 +496,7 @@ async function loadPicks(force = false) {
   $('#applyPicksFilters').disabled = true;
   if (!state.picks.data) {
     $('#marketPicksGrid').innerHTML = '<div class="empty">正在计算多策略综合评分…</div>';
-    $('#picksTable tbody').innerHTML = '<tr><td colspan="9" class="empty">正在扫描候选池并运行 8 个策略…</td></tr>';
+    $('#picksTable tbody').innerHTML = '<tr><td colspan="9" class="empty">正在扫描候选池并运行 9 个策略…</td></tr>';
   }
   const query = new URLSearchParams({ limit: '20', ...state.picks.filters });
   if (force) query.set('refresh', '1');
@@ -524,7 +524,7 @@ function renderMarketPicks(data) {
     return;
   }
   const m = data.meta || {};
-  $('#marketPicksHint').textContent = `${new Date(m.asOf).toLocaleTimeString('zh-CN', { hour12: false })} 更新 · 候选 ${m.candidates} 只 · 8 策略综合`;
+  $('#marketPicksHint').textContent = `${new Date(m.asOf).toLocaleTimeString('zh-CN', { hour12: false })} 更新 · 候选 ${m.candidates} 只 · 9 策略综合`;
   $('#marketPicksGrid').innerHTML = items
     .map(
       (r, i) => `<div class="pick-mini" data-code="${esc(r.code)}">
@@ -557,7 +557,7 @@ function renderPicks(data) {
     <span>技术评估<b>${m.evaluated ?? 0}</b></span>
     <span>候选池<b>${m.candidates ?? 0}</b></span>
     <span>市场温度<b>${m.market?.regime || '--'} (${m.market?.breadth ?? '--'}%)</b></span>
-    <span>参与策略<b>${m.strategyCount ?? 8}</b></span>
+    <span>参与策略<b>${m.strategyCount ?? 9}</b></span>
     <span>耗时<b>${m.elapsedMs ?? 0} ms</b></span>`;
   $('#picksNote').textContent = data.disclaimer || '';
   const f = m.filters || state.picks.filters;
@@ -629,7 +629,7 @@ async function loadStock(code, period = state.stock.period) {
   if (codeChanged) {
     state.stock.advice = null;
     state.stock.intraday = null;
-    $('#adviceBody').innerHTML = '<div class="empty">正在运行 8 个回测策略并计算权重…</div>';
+    $('#adviceBody').innerHTML = '<div class="empty">正在运行 9 个回测策略并计算权重…</div>';
     $('#adviceCard').hidden = false;
   }
   $('#stockMain').hidden = false;
@@ -651,13 +651,14 @@ async function loadStock(code, period = state.stock.period) {
       await loadIntraday(code);
     } else {
       $('#chartTitle').textContent = period === 'week' ? '周 K 线' : '日 K 线';
-      $('#maLegend').innerHTML = '<i style="background:#f5c542"></i>MA5 <i style="background:#3ba9ff"></i>MA10 <i style="background:#a78bfa"></i>MA20 <i style="background:#7dd3a0"></i>MA60';
+      $('#maLegend').innerHTML = '<i style="background:#f5c542"></i>MA5 <i style="background:#3ba9ff"></i>MA10 <i style="background:#a78bfa"></i>MA20 <i style="background:#7dd3a0"></i>MA60' +
+        (period === 'day' ? ' <i style="background:#e879f9"></i>缠论笔 <i style="height:7px;background:rgba(59,169,255,.35)"></i>中枢' : '');
       $('#intradaySummary').hidden = true;
       const count = period === 'week' ? 260 : 320;
       const detail = await apiGet(`/api/stock?code=${code}&period=${period}&count=${count}`);
       applyStockDetail(detail);
       $('#klineEmpty').style.display = 'none';
-      state.stock.layout = drawKline($('#klineCanvas'), detail.series, { showMacd: true });
+      state.stock.layout = drawKline($('#klineCanvas'), detail.series, { showMacd: true, showChan: period === 'day' });
       state.stock.intradayLayout = null;
     }
   } catch (err) {
@@ -677,8 +678,34 @@ function applyStockDetail(detail) {
   renderStockHeader(detail);
   renderTech(detail);
   renderFund(detail);
-  renderBacktestControls(detail.strategies);
+  renderChanPanel(detail);
   document.title = `${detail.name || detail.code} · MONEY 量化终端`;
+}
+
+function renderChanPanel(detail) {
+  const panel = $('#chanPanel');
+  const visible = state.stock.period === 'day' && detail?.period === 'day' && detail.series?.chan;
+  panel.hidden = !visible;
+  if (!visible) {
+    panel.innerHTML = '';
+    return;
+  }
+  const c = detail.series.chan;
+  const s = c.summary || {};
+  const point = s.latestPoint;
+  const pivot = s.latestPivot;
+  const sector = state.stock.advice?.sector;
+  panel.innerHTML = `
+    <div class="chan-title"><b>缠论解读</b><span>已确认结构 · 标记位于确认 K 线</span></div>
+    <div class="chan-tags">
+      <span>最近笔 <b>${esc(s.trend || '震荡')}</b></span>
+      <span>中枢位置 <b>${esc(s.position || '暂无中枢')}</b></span>
+      <span>中枢区间 <b>${pivot ? `${fmt.price(pivot.low)} – ${fmt.price(pivot.high)}` : '--'}</b></span>
+      <span>最近信号 <b class="${point?.side === 'buy' ? 'up' : point?.side === 'sell' ? 'down' : ''}">${point ? `${esc(point.type)} · ${esc(point.confirmDate)}` : '等待确认'}</b></span>
+    </div>
+    <ul>${(c.descriptions || []).map((text) => `<li>${esc(text)}</li>`).join('')}</ul>
+    ${sector ? `<div class="chan-sector">板块情绪：${esc(sector.boardName || '行业数据降级')} · ${esc(sector.state || '中性')} ${fmt.price(sector.score)} 分，环境修正 ${fmt.signed(sector.adjustment || 0, 1)} 分。${esc(sector.available === false ? '当前按中性值降级，不影响原策略。' : '实时涨跌家数仅展示，不参与历史分。')}</div>` : ''}
+    <p class="fineprint">缠论为固定规则的工程化近似，不覆盖所有主观流派与完整多级别递归；分型、笔和买卖点均有右侧确认滞后，禁止用极值日事后倒填信号。</p>`;
 }
 
 async function loadAdvice(code) {
@@ -705,6 +732,8 @@ function adviceTone(action) {
 
 function renderAdvice(d) {
   const tone = adviceTone(d.action);
+  if (state.stock.detail) renderChanPanel(state.stock.detail);
+  const sector = d.sector || null;
   const rows = (d.strategies || [])
     .map(
       (s) => `<tr>
@@ -744,6 +773,13 @@ function renderAdvice(d) {
         ${(d.warnings || []).length ? `<div class="advice-warn">${d.warnings.map((w) => `<span>⚠ ${esc(w)}</span>`).join('')}</div>` : ''}
       </div>
     </div>
+    ${sector ? `<div class="sector-strip">
+      <div><span>所属行业</span><b>${esc(sector.boardName || '暂不可用')}</b></div>
+      <div><span>短线板块情绪</span><b>${esc(sector.state || '中性')} · ${fmt.price(sector.score)} 分</b></div>
+      <div><span>综合分环境修正</span><b>${fmt.signed(sector.adjustment || 0, 1)} 分</b></div>
+      <div><span>板块上涨 / 下跌家数</span><b>${sector.breadth ? `${sector.breadth.upCount ?? '--'} / ${sector.breadth.downCount ?? '--'}` : '仅实时展示，暂不可用'}</b></div>
+      <p>${esc((sector.descriptions || []).join('；') || '板块情绪只作环境修正，不独立触发买卖点。')}</p>
+    </div>` : ''}
     <div class="table-wrap advice-table-wrap">
       <table class="data-table advice-table">
         <thead><tr>
@@ -806,6 +842,8 @@ function renderIntradaySummary(d) {
       <span>高 / 低 <b>${fmt.price(d.high)} / ${fmt.price(d.low)}</b></span>
       <span>买卖点 <b><i class="dot-buy"></i>${s.buyCount || 0} / <i class="dot-sell"></i>${s.sellCount || 0}</b></span>
       <span>量比 / OBV <b>${fmt.price(s.volRatio)} / ${fmt.signed(s.obvStrength)}</b></span>
+      <span>5 分钟缠论 <b>${d.chan?.latestPoint ? `${esc(d.chan.latestPoint.type)} · ${esc(d.chan.latestPoint.confirmTime || d.chan.latestPoint.confirmDate)}` : esc(d.chan?.trend || '等待确认')}</b></span>
+      <span>板块情绪 <b>${d.sector ? `${esc(d.sector.boardName || '中性降级')} · ${esc(d.sector.state || '中性')} ${fmt.price(d.sector.score)}` : '--'}</b></span>
       <span>高位禁买 / 低位禁卖 <b>${s.blockedBuy || 0} / ${s.blockedSell || 0}</b></span>
       <span>数据时间 <b>${esc(d.dataTime || '--')}</b></span>
       <span>数据源 <b>${esc(d.source || '--')}</b></span>
@@ -916,55 +954,21 @@ async function onSearchInput(value) {
 
 /* ------------------------------ 回测 ------------------------------ */
 
-function renderBacktestControls(strategies) {
-  if (!strategies || !strategies.length) return;
-  const sel = $('#btStrategy');
-  if (!sel.options.length) {
-    sel.innerHTML = strategies.map((s) => `<option value="${s.key}">${esc(s.name)}</option>`).join('');
-    sel.value = state.stock.strategy;
-  }
-  renderBtParams();
-}
-
-function currentStrategy() {
-  return (state.stock.detail?.strategies || []).find((s) => s.key === state.stock.strategy);
-}
-
-function renderBtParams() {
-  const s = currentStrategy();
-  if (!s) return;
-  const labels = {
-    fast: '快线周期', slow: '慢线周期', signal: '信号周期', period: '计算周期', mult: '标准差倍数',
-    low: '低位阈值', high: '高位阈值', entry: '突破周期', exit: '离场周期',
-  };
-  $('#btParams').innerHTML =
-    `<span class="hint" style="flex-basis:100%">${esc(s.desc)}</span>` +
-    Object.entries(s.params)
-      .map(
-        ([k, v]) => `<label class="field" style="width:120px"><span>${labels[k] || k}</span>
-          <input type="number" data-btparam="${k}" value="${v}" step="1" /></label>`,
-      )
-      .join('');
-}
-
 async function runBacktest() {
-  const s = currentStrategy();
-  if (!s || !state.stock.code) return;
+  if (!state.stock.code) return;
   const btn = $('#runBacktest');
   btn.disabled = true;
-  btn.textContent = '回测中…';
-  const params = {};
-  $$('[data-btparam]').forEach((i) => { params[i.dataset.btparam] = Number(i.value); });
+  btn.textContent = '综合回测中…';
   const days = Number($('#btDays').value) || 500;
   try {
-    const qs = new URLSearchParams({ code: state.stock.code, strategy: s.key, days: String(days), ...params });
+    const qs = new URLSearchParams({ code: state.stock.code, days: String(days) });
     const data = await apiGet(`/api/backtest?${qs}`);
     renderBacktest(data);
   } catch (err) {
     toast(`回测失败：${err.message}`, true);
   } finally {
     btn.disabled = false;
-    btn.textContent = '运行回测';
+    btn.textContent = '运行综合回测';
   }
 }
 
@@ -998,6 +1002,19 @@ function renderBacktest(data) {
         )
         .join('')
     : '<tr><td colspan="6" class="empty">该区间内没有触发交易</td></tr>';
+  const sector = data.sector || {};
+  const walk = data.walkForward || {};
+  $('#btComposite').innerHTML = `
+    <div class="bt-context">
+      <span>最新综合分 <b>${fmt.price(data.composite?.score)}</b></span>
+      <span>板块环境 <b>${esc(sector.boardName || '中性降级')} · ${esc(sector.state || '中性')} ${fmt.price(sector.score)}</b></span>
+      <span>环境修正 <b>${fmt.signed(sector.adjustment || 0, 1)} 分</b></span>
+      <span>调权区间 <b>${esc(walk.lastTraining?.start || '--')} 至 ${esc(walk.lastTraining?.end || '--')}</b></span>
+    </div>
+    <div class="bt-weight-grid">${(data.weights || []).map((w) => `
+      <div><span>${esc(w.name)}</span><b>${Number(w.weight).toFixed(2)}%</b><em class="${w.signal === 'long' ? 'up' : 'down'}">${w.signal === 'long' ? '持仓' : '空仓'}</em></div>`).join('')}
+    </div>
+    <p class="fineprint">${esc(walk.execution || '收盘确认，下一交易日开盘成交')} · 每 ${walk.rebalanceEvery || 20} 个交易日调权，训练窗口最多 ${walk.trainingDays || 400} 日。${esc(sector.warning || walk.industryNote || '')}</p>`;
   state.stock.btCurve = data.curve;
   const canvas = $('#equityCanvas');
   drawEquity(canvas, data.curve);
@@ -1651,10 +1668,6 @@ function bindEvents() {
     $$('#periodSwitch button').forEach((b) => b.classList.toggle('active', b === btn));
     loadStock(state.stock.code, btn.dataset.period);
   });
-  $('#btStrategy').addEventListener('change', (e) => {
-    state.stock.strategy = e.target.value;
-    renderBtParams();
-  });
   $('#runBacktest').addEventListener('click', runBacktest);
 
   // 图表十字光标（分时 / K 线）
@@ -1691,7 +1704,7 @@ function bindEvents() {
     const series = state.stock.series;
     if (!layout || !series) return;
     const idx = layout.indexFromX(px);
-    state.stock.layout = drawKline(klineCanvas, series, { showMacd: true, hoverIndex: idx, mouseY: py });
+    state.stock.layout = drawKline(klineCanvas, series, { showMacd: true, showChan: state.stock.period === 'day', hoverIndex: idx, mouseY: py });
     const b = series.bars[idx];
     if (!b) return;
     const prev = series.bars[idx - 1]?.close ?? b.open;
@@ -1714,7 +1727,7 @@ function bindEvents() {
     if (state.stock.period === 'min' && state.stock.intraday) {
       state.stock.intradayLayout = drawIntraday(klineCanvas, state.stock.intraday);
     } else if (state.stock.series) {
-      state.stock.layout = drawKline(klineCanvas, state.stock.series, { showMacd: true });
+      state.stock.layout = drawKline(klineCanvas, state.stock.series, { showMacd: true, showChan: state.stock.period === 'day' });
     }
   });
 
@@ -1799,7 +1812,7 @@ function bindEvents() {
       if (state.stock.period === 'min' && state.stock.intraday) {
         state.stock.intradayLayout = drawIntraday($('#klineCanvas'), state.stock.intraday);
       } else if (state.stock.series) {
-        state.stock.layout = drawKline($('#klineCanvas'), state.stock.series, { showMacd: true });
+        state.stock.layout = drawKline($('#klineCanvas'), state.stock.series, { showMacd: true, showChan: state.stock.period === 'day' });
       }
       if (state.stock.btCurve) drawEquity($('#equityCanvas'), state.stock.btCurve);
       if (state.overview) renderIndexCards(state.overview);

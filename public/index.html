@@ -6,7 +6,7 @@
 <title>MONEY · A股量化终端</title>
 <meta name="description" content="接入腾讯财经、新浪财经、东方财富数据的 A 股量化选股与模拟交易终端" />
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%230b1220'/%3E%3Cpath d='M20 70 L38 46 L52 58 L80 26' stroke='%23ffb547' stroke-width='9' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
-<link rel="stylesheet" href="/css/app.css?v=1.0.4" />
+<link rel="stylesheet" href="/css/app.css?v=1.1.0" />
 </head>
 <body>
 <div class="bg-grid" aria-hidden="true"></div>
@@ -46,7 +46,7 @@
       <div class="card-head">
         <h3>实时多策略荐股榜</h3>
         <div class="toolbar">
-          <span class="hint" id="marketPicksHint">综合 8 大策略评分</span>
+          <span class="hint" id="marketPicksHint">综合 9 大策略评分</span>
           <a class="btn ghost" href="#/picks">查看完整榜单</a>
         </div>
       </div>
@@ -122,7 +122,7 @@
       <div class="picks-hero-text">
         <span class="eyebrow">MULTI-STRATEGY PICKS</span>
         <h2>实时多策略综合荐股榜</h2>
-        <p>同一候选池同时运行双均线、MACD、动量、放量突破、RSI、布林带、KDJ、量价共振 8 个技术策略，统一纳入成交量与 OBV，按平均得分与命中策略数聚合排序。</p>
+        <p>同一候选池同时运行双均线、MACD、动量、放量突破、RSI、布林带、KDJ、量价共振与缠论结构 9 个技术策略，统一纳入成交量与 OBV，按平均得分与命中策略数聚合排序。</p>
       </div>
       <div class="picks-hero-actions">
         <span class="hint" id="picksUpdated">尚未加载</span>
@@ -285,7 +285,7 @@
         <h3>多策略综合建议</h3>
         <span class="hint" id="adviceAsOf">按回测胜率 × 盈利质量分配权重</span>
       </div>
-      <div id="adviceBody"><div class="empty">正在运行 8 个回测策略并计算权重…</div></div>
+      <div id="adviceBody"><div class="empty">正在运行 9 个回测策略并计算权重…</div></div>
     </div>
 
     <div class="stock-main" hidden id="stockMain">
@@ -307,6 +307,7 @@
           <div class="chart-empty" id="klineEmpty" style="display:none">加载行情中…</div>
         </div>
         <div class="intraday-summary" id="intradaySummary" hidden></div>
+        <div class="chan-panel" id="chanPanel" hidden></div>
       </div>
 
       <div class="side-col">
@@ -324,15 +325,15 @@
 
     <div class="card section-card" id="backtestCard" hidden>
       <div class="card-head">
-        <h3>策略回测</h3>
+        <h3>多策略综合回测</h3>
         <div class="toolbar">
-          <select id="btStrategy"></select>
+          <span class="hint">20 日滚动调权 · 次日开盘成交</span>
           <input type="number" id="btDays" value="500" min="120" max="800" step="20" title="回测天数" />
-          <button class="btn primary" id="runBacktest">运行回测</button>
+          <button class="btn primary" id="runBacktest">运行综合回测</button>
         </div>
       </div>
-      <div class="bt-params" id="btParams"></div>
       <div class="bt-metrics" id="btMetrics"></div>
+      <div class="bt-composite" id="btComposite"></div>
       <div class="bt-body">
         <div class="chart-wrap bt-chart">
           <canvas id="equityCanvas" height="260"></canvas>
@@ -440,7 +441,7 @@
 
       <article class="card doc">
         <h2>策略库（参考 GitHub 开源项目）</h2>
-        <p>荐股、个股综合建议、分时买卖点和策略回测统一使用以下 8 个技术策略；分钟图会按短周期适配同一套信号逻辑：</p>
+        <p>荐股、个股综合建议、分时买卖点和综合回测统一使用以下 9 个技术策略；分钟图会按短周期适配同一套信号逻辑，板块情绪作为共享环境因子，不替代任何原策略：</p>
         <ul>
           <li><strong>双均线趋势</strong> — MA5/MA20 趋势交叉，结合量能、OBV 与超买过滤；</li>
           <li><strong>MACD 趋势</strong> — DIF/DEA 交叉与柱体变化，结合趋势和量能确认；</li>
@@ -449,7 +450,8 @@
           <li><strong>RSI 超跌反转</strong> — RSI(14) 超卖企稳，避免把持续下跌直接当作反转；</li>
           <li><strong>布林带回归</strong> — 布林带位置、带宽与回归信号；</li>
           <li><strong>KDJ 超跌</strong> — K/D 低位金叉与高位死叉，结合区间位置；</li>
-          <li><strong>量价共振</strong> — 量比、OBV、价格趋势与成交额共同确认。</li>
+          <li><strong>量价共振</strong> — 量比、OBV、价格趋势与成交额共同确认；</li>
+          <li><strong>缠论结构</strong> — 包含处理、右侧确认分型、笔、三笔重叠中枢及 1/2/3 类买卖点的固定规则近似。</li>
         </ul>
         <p>策略思路参考 Backtrader、vn.py、Qlib、Freqtrade 等开源项目的指标与回测实现，并针对本站数据结构调整；不是对原项目策略的逐行复刻，也不代表收益保证。</p>
       </article>
@@ -468,24 +470,24 @@
 
       <article class="card doc">
         <h2>回测与模拟交易</h2>
-        <p>回测按日频收盘价撮合，双边计佣金 0.025%、过户费 0.001%，卖出加收 0.05% 印花税，并计入 0.05% 滑点，A 股按 100 股整手交易。</p>
+        <p>回测只运行“多策略综合建议”，不提供单策略或参数选择。每 20 个交易日调权，只使用调权日前一交易日及以前最多 400 日数据；信号在收盘确认，下一交易日开盘成交。双边计佣金 0.025%、过户费 0.001%，卖出加收 0.05% 印花税，并计入 0.05% 滑点，A 股按 100 股整手交易。</p>
         <p>模拟交易账户保存在浏览器本地（localStorage），提供买入、卖出、持仓盈亏与委托记录，仅用于策略验证，不涉及任何真实资金。</p>
       </article>
 
       <article class="card doc">
         <h2>多策略综合建议与分时买卖点</h2>
-        <p>个股分析页会把同一只股票同时跑与荐股榜一致的 8 个回测策略，并计算每个策略的胜率、区间收益、盈亏比与最大回撤。</p>
+        <p>个股分析页会把同一只股票同时跑与荐股榜一致的 9 个回测策略，并计算每个策略的胜率、区间收益、盈亏比与最大回撤。</p>
         <ul>
           <li><strong>权重</strong> = 胜率 × 盈利质量 × 盈亏比，经归一化并与等权基准混合，避免单一策略过度主导；</li>
-          <li><strong>综合建议</strong> = 各策略当前持仓 / 空仓信号按权重加权，输出「买入 / 持有 / 卖出」、置信度与策略分歧提示；</li>
-          <li><strong>分时买卖点</strong> = 同一 8 策略在分钟序列上投票，至少两个策略同向；高位追买与低位杀跌会被拦截或提高确认门槛。</li>
+          <li><strong>综合建议</strong> = 各策略当前持仓 / 空仓信号按权重加权，再以板块趋势、动量、量能评分作 ±4 分环境修正，输出「买入 / 持有 / 卖出」与策略分歧提示；</li>
+          <li><strong>分时买卖点</strong> = 同一 9 策略投票，其中缠论使用右侧确认的 5 分钟结构；至少两个策略同向，高位追买与低位杀跌仍会被拦截或提高确认门槛，板块情绪不独立触发交易。</li>
         </ul>
-        <p>图表支持「分时 / 日K / 周K」切换。分时页每 30 秒自动拉取最新分钟快照并重算标记，不是逐笔实时推送，行情可能延迟，信号也不保证成交或未来收益。</p>
+        <p>图表支持「分时 / 日K / 周K」切换。日 K 叠加已确认缠论笔、半透明中枢与买卖点，并给出文字解读；标记落在确认 K 线而非事后极值点。分时页每 30 秒自动拉取最新分钟快照并重算标记，不是逐笔实时推送，行情可能延迟，信号也不保证成交或未来收益。</p>
       </article>
 
       <article class="card doc">
         <h2>实时荐股榜单</h2>
-        <p>「荐股榜单」对同一候选池同时运行 8 个技术策略，按平均得分与命中策略数聚合为综合评分，输出 Top 20。可自定义股价（元）与总市值（亿元）区间，首页前 5 名沿用相同筛选。</p>
+        <p>「荐股榜单」对同一候选池同时运行 9 个技术策略，按平均得分与命中策略数聚合为综合评分，输出 Top 20。可自定义股价（元）与总市值（亿元）区间，首页前 5 名沿用相同筛选。</p>
         <p>榜单每 3 分钟缓存刷新一次；点击任意股票即可进入个股分析，查看相同策略体系下的综合建议与分时买卖点，形成可交叉验证的「榜单 → 个股 → 买卖点 → 回测」动线。</p>
       </article>
 
@@ -505,6 +507,6 @@
 
 <div class="toast" id="toast" hidden></div>
 
-<script type="module" src="/js/app.js?v=1.0.5"></script>
+<script type="module" src="/js/app.js?v=1.1.0"></script>
 </body>
 </html>
