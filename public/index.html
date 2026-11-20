@@ -6,7 +6,7 @@
 <title>MONEY · A股量化终端</title>
 <meta name="description" content="接入腾讯财经、新浪财经、东方财富数据的 A 股量化选股与模拟交易终端" />
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%230b1220'/%3E%3Cpath d='M20 70 L38 46 L52 58 L80 26' stroke='%23ffb547' stroke-width='9' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
-<link rel="stylesheet" href="/css/app.css?v=1.0.2" />
+<link rel="stylesheet" href="/css/app.css?v=1.0.3" />
 </head>
 <body>
 <div class="bg-grid" aria-hidden="true"></div>
@@ -29,6 +29,7 @@
 <nav class="tabs" id="tabs">
   <a href="#/market" data-view="market">行情总览</a>
   <a href="#/screen" data-view="screen">量化选股</a>
+  <a href="#/portfolio" data-view="portfolio">持仓信息</a>
   <a href="#/stock" data-view="stock">个股分析</a>
   <a href="#/trade" data-view="trade">模拟交易</a>
   <a href="#/docs" data-view="docs">策略说明</a>
@@ -103,40 +104,95 @@
 
   <!-- 量化选股 -->
   <section class="view" id="view-screen">
+    <div class="strategy-strip" id="strategyStrip"></div>
     <div class="screen-layout">
       <aside class="card control-panel">
-        <div class="card-head"><h3>因子权重</h3><span class="hint">权重越高越重要</span></div>
-        <div class="sliders" id="weightSliders"></div>
+        <div id="strategyPanel"></div>
+        <div class="filter-grid" id="strategyParams"></div>
+
+        <div id="factorPanel">
+          <div class="card-head sub"><h3>因子权重</h3><span class="hint">权重越高越重要</span></div>
+          <div class="sliders" id="weightSliders"></div>
+        </div>
 
         <div class="card-head sub"><h3>股票过滤</h3><span class="hint">先粗筛再打分</span></div>
         <div class="filter-grid" id="filterGrid"></div>
 
         <div class="board-filter" id="boardFilter"></div>
-        <button class="btn primary block" id="runScreen">运行量化选股</button>
+        <button class="btn primary block" id="runScreen">运行策略选股</button>
         <p class="fineprint" id="screenNote">选股基于公开行情与财报数据计算，仅供研究参考，不构成投资建议。</p>
       </aside>
 
       <div class="screen-results">
         <div class="card slim meta-bar" id="screenMeta"></div>
+        <div class="card section-card rec-card">
+          <div class="card-head"><h3 id="recTitle">今日策略荐股</h3><span class="hint" id="recHint">平台自动筛选符合策略的股票</span></div>
+          <div class="rec-grid" id="recGrid">
+            <div class="empty">正在加载策略荐股…</div>
+          </div>
+        </div>
         <div class="card section-card">
           <div class="card-head">
             <h3>选股结果</h3>
-            <span class="hint" id="screenHint">设置权重后点击「运行量化选股」</span>
+            <span class="hint" id="screenHint">选择策略后自动运行</span>
           </div>
           <div class="table-wrap">
             <table class="data-table screen-table" id="screenTable">
               <thead>
                 <tr>
                   <th>#</th><th>代码 / 名称</th><th class="num">现价</th><th class="num">涨跌幅</th>
-                  <th class="num">综合得分</th><th class="factor-col">动量</th><th class="factor-col">趋势</th>
+                  <th class="num">策略得分</th><th class="factor-col">动量</th><th class="factor-col">趋势</th>
                   <th class="factor-col">量能</th><th class="factor-col">波动</th><th class="factor-col">估值</th>
-                  <th class="factor-col">成长</th><th>信号</th>
+                  <th class="factor-col">成长</th><th>入选理由</th>
                 </tr>
               </thead>
               <tbody><tr><td colspan="12" class="empty">尚未运行选股</td></tr></tbody>
             </table>
           </div>
         </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 持仓信息 -->
+  <section class="view" id="view-portfolio">
+    <div class="account-grid" id="pfSummary"></div>
+
+    <div class="portfolio-layout">
+      <div class="card pf-edit-card">
+        <div class="card-head"><h3>我的持仓</h3><span class="hint">保存在浏览器本地，可随时编辑</span></div>
+        <div class="pf-add">
+          <input id="pfCode" placeholder="股票代码 600519" maxlength="6" inputmode="numeric" />
+          <input id="pfShares" type="number" placeholder="股数" step="100" min="0" />
+          <input id="pfCost" type="number" placeholder="成本价" step="0.01" min="0" />
+          <button class="btn primary" id="pfAdd">添加 / 更新</button>
+          <button class="btn ghost" id="pfImport">导入模拟持仓</button>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table" id="pfTable">
+            <thead>
+              <tr><th>代码 / 名称</th><th class="num">股数</th><th class="num">成本价</th><th class="num">现价</th>
+                <th class="num">市值</th><th class="num">浮动盈亏</th><th></th></tr>
+            </thead>
+            <tbody><tr><td colspan="7" class="empty">暂无持仓，请添加股票</td></tr></tbody>
+          </table>
+        </div>
+        <p class="fineprint">示例：600519 / 100 股 / 成本 1600。股数与成本可直接在表格中修改，修改后自动重新诊断。</p>
+      </div>
+
+      <div class="card pf-diag-card">
+        <div class="card-head">
+          <h3>实时策略诊断</h3>
+          <div class="toolbar">
+            <span class="hint" id="pfUpdated">--</span>
+            <button class="btn ghost" id="pfRefresh">刷新诊断</button>
+          </div>
+        </div>
+        <div id="pfAlerts"></div>
+        <div class="diag-list" id="pfDiagList">
+          <div class="empty">添加持仓后自动给出持有 / 买入 / 减仓等信号</div>
+        </div>
+        <p class="fineprint">综合均线、MACD、RSI、量能、阶段涨跌与持仓盈亏生成信号，行情约每分钟刷新；仅供研究参考。</p>
       </div>
     </div>
   </section>
@@ -304,6 +360,34 @@
       </article>
 
       <article class="card doc">
+        <h2>策略库（参考 GitHub 开源项目）</h2>
+        <p>选股页内置 8 个可选策略，均可在策略条中一键切换并自动运行：</p>
+        <ul>
+          <li><strong>Alpha158 多因子</strong> — 参考 microsoft/qlib 的 Alpha158 量价因子体系；</li>
+          <li><strong>海龟通道突破</strong> — 20/60 日通道 + ATR 波动过滤（海龟交易法则、vnpy 常用）；</li>
+          <li><strong>双均线趋势</strong> — MA5/MA20 金叉 + MA60 中期确认（backtrader 社区经典）；</li>
+          <li><strong>动量轮动</strong> — 20/60 日收益与区间位置；</li>
+          <li><strong>RSI 超跌反转</strong> — RSI(14) 超卖企稳；</li>
+          <li><strong>神奇公式</strong> — ROE 与 PE/PB 的好公司好价格组合；</li>
+          <li><strong>CANSLIM 成长动量</strong> — 盈利、营收增长叠加相对强度与量能；</li>
+          <li><strong>低波动价值</strong> — 低波动 + 低估值 + MA60 上方。</li>
+        </ul>
+        <p>每个结果都会给出得分、等级与「入选理由」，顶部卡片自动展示当日最符合该策略的股票。</p>
+      </article>
+
+      <article class="card doc">
+        <h2>持仓诊断</h2>
+        <p>「持仓信息」栏目可手动添加股票、股数与成本价，数据保存在浏览器本地。平台会对每只持仓拉取实时行情与 150 根日 K，综合均线结构、MACD、RSI、量能、阶段动量与持仓盈亏，输出：</p>
+        <ul>
+          <li><strong>买入 / 加仓</strong> — 多头排列、MACD 红柱、放量上涨等信号共振；</li>
+          <li><strong>持有</strong> — 趋势仍在但信号强度一般；</li>
+          <li><strong>减仓</strong> — 跌破 MA20、死叉、RSI 超买或浮亏扩大；</li>
+          <li><strong>清仓</strong> — 中期趋势破坏且亏损超过阈值。</li>
+        </ul>
+        <p>同时给出支撑位、压力位、止损位、目标位、置信度与风险等级，并在组合层面提示集中度与整体亏损风险。</p>
+      </article>
+
+      <article class="card doc">
         <h2>回测与模拟交易</h2>
         <p>回测按日频收盘价撮合，双边计佣金 0.025%、过户费 0.001%，卖出加收 0.05% 印花税，并计入 0.05% 滑点，A 股按 100 股整手交易。</p>
         <p>模拟交易账户保存在浏览器本地（localStorage），提供买入、卖出、持仓盈亏与委托记录，仅用于策略验证，不涉及任何真实资金。</p>
@@ -325,6 +409,6 @@
 
 <div class="toast" id="toast" hidden></div>
 
-<script type="module" src="/js/app.js?v=1.0.2"></script>
+<script type="module" src="/js/app.js?v=1.0.3"></script>
 </body>
 </html>

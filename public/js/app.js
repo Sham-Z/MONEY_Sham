@@ -75,8 +75,12 @@ const state = {
   quote: { page: 1, size: 50, sort: 'changepercent', asc: 0, search: '' },
   screenMeta: null,
   screen: null,
+  screenStrategy: 'alpha158',
+  screenParams: {},
+  screenLoading: false,
   stock: { code: '', name: '', period: 'day', series: null, detail: null, strategy: 'ma_cross', btDays: 500, layout: null },
   trade: { account: null, prices: {}, timer: null },
+  portfolio: { holdings: [], diagnosis: null, timer: null, loading: false },
 };
 
 /* ------------------------------ 顶栏 ------------------------------ */
@@ -217,6 +221,24 @@ async function loadQuotes() {
 
 /* ------------------------------ 量化选股 ------------------------------ */
 
+function strategyDef(key) {
+  return (state.screenMeta?.strategies || []).find((s) => s.key === key) || null;
+}
+
+function collectFilters() {
+  const filters = {};
+  $$('[data-filter]').forEach((i) => { filters[i.dataset.filter] = Number(i.value); });
+  filters.boards = $$('#boardFilter input[type="checkbox"][value]').filter((i) => i.checked).map((i) => i.value);
+  filters.excludeST = $('#excludeST')?.checked ?? true;
+  return filters;
+}
+
+function collectWeights() {
+  const weights = {};
+  $$('#weightSliders input[type="range"]').forEach((i) => { weights[i.dataset.key] = Number(i.value); });
+  return weights;
+}
+
 async function initScreenControls() {
   let meta;
   try {
@@ -225,6 +247,10 @@ async function initScreenControls() {
     return;
   }
   state.screenMeta = meta;
+  if (!meta.strategies?.some((s) => s.key === state.screenStrategy)) {
+    state.screenStrategy = meta.defaultStrategy || 'alpha158';
+  }
+
   $('#weightSliders').innerHTML = meta.factors
     .map(
       (f) => `
@@ -244,7 +270,7 @@ async function initScreenControls() {
   });
 
   const fields = [
-    ['scanCount', '扫描成交额前 N 只', 'select', [300, 600, 900, 1200]],
+    ['scanCount', '扫描成交额前 N 只', 'select', [300, 600, 936, 1200]],
     ['candidates', '技术评估候选数', 'select', [40, 70, 100]],
     ['limit', '输出结果数', 'select', [12, 24, 40]],
     ['peMax', '市盈率上限', 'number', 150],
@@ -266,38 +292,109 @@ async function initScreenControls() {
     })
     .join('');
 
-  $('#boardFilter').innerHTML = meta.boards
+  $('#boardFilter').innerHTML =
+    meta.boards.map((b) => `<label><input type="checkbox" value="${b.key}" checked /> ${esc(b.label)}</label>`).join('') +
+    '<label><input type="checkbox" id="excludeST" checked /> 排除 ST</label>';
+
+  renderStrategyStrip();
+  selectStrategy(state.screenStrategy, { auto: false });
+  if (location.hash.startsWith('#/screen')) runStrategy();
+}
+
+function renderStrategyStrip() {
+  const defs = state.screenMeta?.strategies || [];
+  const cards = defs
     .map(
-      (b) => `<label><input type="checkbox" value="${b.key}" checked /> ${esc(b.label)}</label>
-        <label><input type="checkbox" id="excludeST" checked /> 排除 ST</label>`,
+      (s) => `<div class="strategy-card" data-strategy="${esc(s.key)}">
+        <div class="st-top"><b>${esc(s.name)}</b><span class="st-tag">${esc(s.tag)}</span></div>
+        <p>${esc(s.desc)}</p>
+        <div class="st-source">${esc(s.source)}</div>
+      </div>`,
     )
     .join('');
+  $('#strategyStrip').innerHTML =
+    cards +
+    `<div class="strategy-card" data-strategy="custom">
+      <div class="st-top"><b>自定义多因子</b><span class="st-tag">手动</span></div>
+      <p>自行调整动量、趋势、量能、波动、估值、成长六类因子的权重。</p>
+      <div class="st-source">原有因子模型</div>
+    </div>`;
+}
+
+function selectStrategy(key, opts = {}) {
+  const def = strategyDef(key);
+  const custom = !def;
+  state.screenStrategy = custom ? 'custom' : def.key;
+  $$('.strategy-card').forEach((c) => c.classList.toggle('active', c.dataset.strategy === state.screenStrategy));
+
+  const panel = $('#strategyPanel');
+  if (custom) {
+    panel.innerHTML = `<div class="card-head"><h3>自定义多因子</h3><span class="hint">手动调权重</span></div>
+      <p>按下方六类因子权重加权打分，适合有明确风格偏好的场景。</p>`;
+    $('#factorPanel').hidden = false;
+    $('#strategyParams').innerHTML = '';
+    $('#runScreen').textContent = '运行量化选股';
+  } else {
+    state.screenParams = { ...(def.params || {}) };
+    panel.innerHTML = `<div class="card-head"><h3>${esc(def.name)}</h3><span class="st-tag">${esc(def.tag)}</span></div>
+      <p>${esc(def.desc)}</p>
+      <div class="st-meta">来源：${esc(def.source)} · 入选阈值 ${def.minScore}</div>`;
+    $('#factorPanel').hidden = true;
+    const labels = { entry: '突破周期(20/60)', low: 'RSI 超卖线', minRoe: 'ROE 门槛(%)', minGrowth: '净利增速门槛(%)' };
+    $('#strategyParams').innerHTML = Object.entries(def.params || {})
+      .map(
+        ([k, v]) => `<label class="field"><span>${esc(labels[k] || k)}</span>
+          <input type="number" data-sparam="${esc(k)}" value="${v}" step="1" min="0" /></label>`,
+      )
+      .join('');
+    $('#runScreen').textContent = '运行策略选股';
+  }
+  $('#screenNote').textContent =
+    custom ? '选股基于公开行情与财报数据计算，仅供研究参考，不构成投资建议。' : `当前策略：${def ? def.name : ''}。结果与理由均由公开数据自动计算，不构成投资建议。`;
+  if (opts.auto !== false) runStrategy();
 }
 
 async function runScreen() {
-  const btn = $('#runScreen');
-  btn.disabled = true;
-  btn.textContent = '因子计算中…';
-  const tbody = $('#screenTable tbody');
-  tbody.innerHTML = Array.from({ length: 6 }, () => `<tr><td colspan="12"><div class="skeleton" style="margin:6px 0"></div></td></tr>`).join('');
+  await runStrategy();
+}
 
-  const weights = {};
-  $$('#weightSliders input[type="range"]').forEach((i) => { weights[i.dataset.key] = Number(i.value); });
-  const filters = {};
-  $$('[data-filter]').forEach((i) => { filters[i.dataset.filter] = Number(i.value); });
-  filters.boards = $$('#boardFilter input[type="checkbox"][value]').filter((i) => i.checked).map((i) => i.value);
-  filters.excludeST = $('#excludeST')?.checked ?? true;
+async function runStrategy() {
+  const btn = $('#runScreen');
+  state.screenLoading = true;
+  btn.disabled = true;
+  btn.textContent = '策略扫描中…';
+  const tbody = $('#screenTable tbody');
+  tbody.innerHTML = Array.from({ length: 6 }, () => '<tr><td colspan="12"><div class="skeleton" style="margin:6px 0"></div></td></tr>').join('');
+  $('#recGrid').innerHTML = '<div class="empty">正在扫描全市场并计算策略得分…</div>';
+
+  const filters = collectFilters();
+  const params = {};
+  $$('[data-sparam]').forEach((i) => { params[i.dataset.sparam] = Number(i.value); });
 
   try {
-    const data = await apiPost('/api/screen', { weights, filters });
+    let data;
+    if (state.screenStrategy === 'custom') {
+      data = await apiPost('/api/screen', { weights: collectWeights(), filters });
+    } else {
+      data = await apiPost('/api/recommend', {
+        strategy: state.screenStrategy,
+        params,
+        filters,
+        scanCount: Number(filters.scanCount),
+        candidates: Number(filters.candidates),
+        limit: Number(filters.limit),
+      });
+    }
     state.screen = data;
     renderScreenResult(data);
+    renderRecommendations(data);
   } catch (err) {
     toast(`选股失败：${err.message}`, true);
     tbody.innerHTML = `<tr><td colspan="12" class="empty">选股失败：${esc(err.message)}</td></tr>`;
   } finally {
+    state.screenLoading = false;
     btn.disabled = false;
-    btn.textContent = '运行量化选股';
+    btn.textContent = state.screenStrategy === 'custom' ? '运行量化选股' : '运行策略选股';
   }
 }
 
@@ -305,20 +402,54 @@ function factorCell(v) {
   return `<td class="factor-cell"><div class="fb"><i style="width:${Math.round(v)}%"></i></div><span>${Math.round(v)}</span></td>`;
 }
 
+function renderRecommendations(data) {
+  const items = data.items || [];
+  const meta = data.meta || {};
+  const def = strategyDef(state.screenStrategy);
+  const title = def ? `${def.name} · 今日荐股` : '自定义多因子 · 选股结果';
+  $('#recTitle').textContent = title;
+  $('#recHint').textContent = `扫描 ${meta.scanned ?? 0} 只 · 符合策略 ${meta.qualified ?? 0} 只 · 市场${meta.market?.regime || '--'}`;
+
+  if (!items.length) {
+    $('#recGrid').innerHTML = '<div class="empty">暂无符合该策略的股票，可放宽过滤条件后重试</div>';
+    return;
+  }
+  $('#recGrid').innerHTML = items
+    .slice(0, 3)
+    .map(
+      (r, i) => `<div class="rec-item" data-code="${esc(r.code)}">
+        <div class="rec-head">
+          <div><span class="grade-badge ${esc(r.grade || 'C')}">${esc(r.grade || '-')}</span>
+            <b style="margin-left:6px">${esc(r.name)}</b><code>${esc(r.code)}</code></div>
+          <span class="rec-score">${Number(r.score).toFixed(1)}</span>
+        </div>
+        <div class="rec-sub"><span class="${cls(r.changePct)}">${fmt.price(r.price)} ${fmt.pct(r.changePct)}</span>
+          <span style="color:var(--dim)">第 ${i + 1} 名</span></div>
+        <div class="rec-reasons">${(r.reasons || r.signals || []).slice(0, 4).map((s) => `<span class="sig">${esc(s)}</span>`).join('')}</div>
+        <div class="rec-foot"><span>PE ${r.pe > 0 ? r.pe.toFixed(1) : '亏损'} · 换手 ${Number(r.turnoverRate || 0).toFixed(1)}%</span>
+          <button class="btn ghost" data-add-holding="${esc(r.code)}" data-name="${esc(r.name)}">+ 持仓</button></div>
+      </div>`,
+    )
+    .join('');
+}
+
 function renderScreenResult(data) {
   const m = data.meta || {};
+  const def = data.meta?.strategy || strategyDef(state.screenStrategy);
   $('#screenMeta').innerHTML = `
+    <span>策略<b>${esc(def?.name || '自定义多因子')}</b></span>
     <span>扫描股票<b>${m.scanned ?? 0}</b></span>
     <span>通过过滤<b>${m.filtered ?? 0}</b></span>
     <span>技术评估<b>${m.evaluated ?? 0}</b></span>
+    <span>符合策略<b>${m.qualified ?? 0}</b></span>
+    <span>市场温度<b>${m.market?.regime || '--'} (${m.market?.breadth ?? '--'}%)</b></span>
     <span>耗时<b>${m.elapsedMs ?? 0} ms</b></span>
-    <span>财报期<b>${esc(m.reportDate || '--')}</b></span>
-    <span>权重合计<b>${Object.values(m.weights || {}).reduce((a, b) => a + b, 0)}</b></span>`;
-  $('#screenHint').textContent = `按综合得分排序 · ${new Date().toLocaleTimeString('zh-CN', { hour12: false })}`;
+    <span>财报期<b>${esc(m.reportDate || '--')}</b></span>`;
+  $('#screenHint').textContent = `${new Date().toLocaleTimeString('zh-CN', { hour12: false })} 更新 · 按策略得分排序`;
 
   const tbody = $('#screenTable tbody');
   if (!data.items?.length) {
-    tbody.innerHTML = `<tr><td colspan="12" class="empty">没有符合条件的结果，请放宽过滤条件</td></tr>`;
+    tbody.innerHTML = '<tr><td colspan="12" class="empty">没有符合条件的结果，请放宽过滤条件</td></tr>';
     return;
   }
   tbody.innerHTML = data.items
@@ -332,7 +463,7 @@ function renderScreenResult(data) {
         <td><div class="score-cell"><div class="score-bar"><i style="width:${Math.min(100, r.score)}%"></i></div><span class="score-val">${r.score.toFixed(1)}</span></div></td>
         ${factorCell(r.factors.momentum)}${factorCell(r.factors.trend)}${factorCell(r.factors.volume)}
         ${factorCell(r.factors.volatility)}${factorCell(r.factors.valuation)}${factorCell(r.factors.growth)}
-        <td><div class="sig-list">${(r.signals || []).slice(0, 3).map((s) => `<span class="sig">${esc(s)}</span>`).join('') || '<span class="sig blue">趋势稳健</span>'}</div></td>
+        <td><div class="sig-list">${(r.reasons || r.signals || []).slice(0, 3).map((s) => `<span class="sig">${esc(s)}</span>`).join('') || '<span class="sig blue">趋势稳健</span>'}</div></td>
       </tr>`,
     )
     .join('');
@@ -768,13 +899,235 @@ function resetAccount() {
   toast('模拟账户已重置');
 }
 
+/* ------------------------------ 持仓信息 ------------------------------ */
+
+const HOLD_KEY = 'money.portfolio.v1';
+const ACTION_TEXT = { buy: '买入', add: '加仓', hold: '持有', watch: '观望', reduce: '减仓', exit: '清仓' };
+
+function loadHoldings() {
+  try {
+    const raw = localStorage.getItem(HOLD_KEY);
+    const arr = raw ? JSON.parse(raw) : [];
+    if (Array.isArray(arr)) {
+      state.portfolio.holdings = arr
+        .filter((h) => /^\d{6}$/.test(String(h.code || '')))
+        .slice(0, 30)
+        .map((h) => ({
+          code: String(h.code),
+          name: String(h.name || ''),
+          shares: Math.max(0, Math.floor(Number(h.shares) || 0)),
+          cost: Math.max(0, Number(h.cost) || 0),
+        }));
+    }
+  } catch {
+    state.portfolio.holdings = [];
+  }
+}
+
+function saveHoldings() {
+  localStorage.setItem(HOLD_KEY, JSON.stringify(state.portfolio.holdings));
+}
+
+function diagnosisMap() {
+  return new Map((state.portfolio.diagnosis?.items || []).map((i) => [i.code, i]));
+}
+
+function renderPfSummary() {
+  const d = state.portfolio.diagnosis;
+  const s = d?.summary;
+  const counts = s?.actionCounts || {};
+  const dist = Object.keys(ACTION_TEXT)
+    .filter((k) => counts[k])
+    .map((k) => `${ACTION_TEXT[k]} ${counts[k]}`)
+    .join(' · ');
+  $('#pfSummary').innerHTML = `
+    <div class="account-card"><span>组合市值</span><b>¥${s ? fmt.price(s.marketValue) : '--'}</b><em class="flat">${s ? `${s.count} 只持仓` : '尚未诊断'}</em></div>
+    <div class="account-card"><span>持仓成本</span><b>¥${s ? fmt.price(s.costValue) : '--'}</b><em class="flat">按成本价合计</em></div>
+    <div class="account-card"><span>浮动盈亏</span><b class="${cls(s?.pnl || 0)}">${s ? fmt.signed(s.pnl) : '--'}</b><em class="${cls(s?.pnl || 0)}">${s ? fmt.pct(s.pnlPct) : ''}</em></div>
+    <div class="account-card"><span>今日盈亏（估算）</span><b class="${cls(s?.dayPnl || 0)}">${s ? fmt.signed(s.dayPnl) : '--'}</b><em class="flat">按现价与昨收</em></div>
+    <div class="account-card"><span>策略信号分布</span><b style="font-size:16px">${dist || '--'}</b><em class="flat">实时规则综合判断</em></div>`;
+}
+
+function renderPfEditor() {
+  const tbody = $('#pfTable tbody');
+  const holdings = state.portfolio.holdings;
+  if (!holdings.length) {
+    tbody.innerHTML = '<tr><td colspan="7" class="empty">暂无持仓，请添加股票</td></tr>';
+    return;
+  }
+  const map = diagnosisMap();
+  tbody.innerHTML = holdings
+    .map((h) => {
+      const d = map.get(h.code);
+      const price = d?.price || 0;
+      const mv = d?.marketValue || price * h.shares;
+      const pnl = d?.pnl ?? (h.cost > 0 ? (price - h.cost) * h.shares : 0);
+      const pnlPct = d?.pnlPct ?? (h.cost > 0 && price > 0 ? (price / h.cost - 1) * 100 : 0);
+      return `<tr data-code="${esc(h.code)}">
+        <td><div class="name-cell"><b>${esc(d?.name || h.name || h.code)}</b><span>${esc(h.code)}</span></div></td>
+        <td class="num"><input type="number" data-pf-shares="${esc(h.code)}" value="${h.shares}" step="100" min="0" /></td>
+        <td class="num"><input type="number" data-pf-cost="${esc(h.code)}" value="${h.cost || ''}" step="0.01" min="0" placeholder="0.00" /></td>
+        <td class="num ${cls(d?.changePct || 0)}">${price ? fmt.price(price) : '--'}</td>
+        <td class="num">${price ? fmt.price(mv) : '--'}</td>
+        <td class="num ${cls(pnl)}">${price ? `${fmt.signed(pnl)} (${fmt.pct(pnlPct)})` : '--'}</td>
+        <td><button class="btn ghost danger" data-pf-del="${esc(h.code)}">删除</button></td>
+      </tr>`;
+    })
+    .join('');
+}
+
+function renderPfDiagnosis() {
+  const d = state.portfolio.diagnosis;
+  const alerts = d?.summary?.riskAlerts || [];
+  $('#pfAlerts').innerHTML = alerts.map((a) => `<div class="pf-alert">${esc(a)}</div>`).join('');
+  const list = $('#pfDiagList');
+  if (!d?.items?.length) {
+    list.innerHTML = '<div class="diag-empty">添加持仓后自动给出持有 / 买入 / 减仓等信号</div>';
+    return;
+  }
+  list.innerHTML = d.items
+    .map((r) => {
+      const lv = r.levels || {};
+      return `<div class="diag-item" data-code="${esc(r.code)}">
+        <div class="diag-head">
+          <div class="nm"><b>${esc(r.name)}</b><code>${esc(r.code)}</code>
+            <span class="badge ${esc(r.action)}">${esc(r.actionLabel || ACTION_TEXT[r.action] || '')}</span></div>
+          <div style="text-align:right">
+            <div class="${cls(r.changePct)}" style="font-family:var(--mono);font-size:13px">${fmt.price(r.price)} ${fmt.pct(r.changePct)}</div>
+            <div class="hint">置信度 ${r.confidence}% · 风险 ${esc(r.riskLevel || '--')}</div>
+          </div>
+        </div>
+        <div class="diag-meta">
+          <span>持仓 ${r.shares} 股</span><span>成本 ${r.cost ? fmt.price(r.cost) : '--'}</span>
+          <span class="${cls(r.pnl)}">浮盈 ${fmt.signed(r.pnl)} (${fmt.pct(r.pnlPct ?? 0)})</span>
+          <span>市值 ${fmt.price(r.marketValue)}</span>
+          <span>MA20 ${r.technical?.ma20 ? fmt.price(r.technical.ma20) : '--'}</span>
+          <span>RSI ${r.technical?.rsi14 ? r.technical.rsi14.toFixed(1) : '--'}</span>
+        </div>
+        <div class="rec-reasons">${(r.reasons || []).map((s) => `<span class="sig">${esc(s)}</span>`).join('')}</div>
+        ${r.warnings?.length ? `<div class="diag-warn">${r.warnings.map((w) => `<span>⚠ ${esc(w)}</span>`).join('')}</div>` : ''}
+        ${lv.support ? `<div class="level-grid">
+          <div><span>支撑位</span><b>${fmt.price(lv.support)}</b></div>
+          <div><span>压力位</span><b>${fmt.price(lv.resistance)}</b></div>
+          <div><span>止损位</span><b class="down">${fmt.price(lv.stopLoss)}</b></div>
+          <div><span>目标位</span><b class="up">${fmt.price(lv.takeProfit)}</b></div>
+        </div>` : ''}
+      </div>`;
+    })
+    .join('');
+}
+
+async function addHolding() {
+  const code = $('#pfCode').value.trim();
+  let shares = Math.floor(Number($('#pfShares').value) || 0);
+  let cost = Number($('#pfCost').value) || 0;
+  if (!/^\d{6}$/.test(code)) return toast('请输入 6 位股票代码', true);
+  if (shares < 0) shares = 0;
+
+  let name = '';
+  if (shares > 0 && cost <= 0) {
+    try {
+      const data = await apiGet(`/api/quotes?codes=${code}`);
+      const q = data.items?.[0];
+      if (q) {
+        cost = q.price;
+        name = q.name;
+      }
+    } catch {
+      /* 无法获取现价时允许成本为 0 */
+    }
+  }
+
+  const idx = state.portfolio.holdings.findIndex((h) => h.code === code);
+  if (idx >= 0) {
+    state.portfolio.holdings[idx] = {
+      ...state.portfolio.holdings[idx],
+      shares,
+      cost: cost > 0 ? cost : state.portfolio.holdings[idx].cost,
+      name: name || state.portfolio.holdings[idx].name,
+    };
+  } else {
+    state.portfolio.holdings.push({ code, name, shares, cost });
+  }
+  saveHoldings();
+  $('#pfCode').value = '';
+  $('#pfShares').value = '';
+  $('#pfCost').value = '';
+  renderPfEditor();
+  await diagnosePortfolio(true);
+  toast(`${idx >= 0 ? '已更新' : '已添加'} ${code} · ${shares} 股`);
+}
+
+function importPaperHoldings() {
+  const acc = state.trade.account || loadAccount();
+  const positions = Object.values(acc.positions || {});
+  if (!positions.length) return toast('模拟账户暂无持仓', true);
+  let added = 0;
+  for (const p of positions) {
+    const idx = state.portfolio.holdings.findIndex((h) => h.code === p.code);
+    const item = { code: p.code, name: p.name, shares: p.qty, cost: Number(p.cost.toFixed(2)) };
+    if (idx >= 0) state.portfolio.holdings[idx] = item;
+    else state.portfolio.holdings.push(item);
+    added += 1;
+  }
+  saveHoldings();
+  renderPfEditor();
+  diagnosePortfolio(true);
+  toast(`已导入 ${added} 只模拟持仓`);
+}
+
+async function diagnosePortfolio(showToast = false) {
+  if (state.portfolio.loading) return;
+  const holdings = state.portfolio.holdings;
+  if (!holdings.length) {
+    state.portfolio.diagnosis = null;
+    renderPfSummary();
+    renderPfEditor();
+    renderPfDiagnosis();
+    $('#pfUpdated').textContent = '--';
+    return;
+  }
+  state.portfolio.loading = true;
+  $('#pfDiagList').innerHTML = '<div class="diag-empty">正在获取实时行情并计算持仓信号…</div>';
+  $('#pfUpdated').textContent = '诊断中…';
+  try {
+    const data = await apiPost('/api/portfolio/diagnose', { holdings });
+    state.portfolio.diagnosis = data;
+    renderPfSummary();
+    if (!document.activeElement || !document.activeElement.closest('#pfTable')) renderPfEditor();
+    renderPfDiagnosis();
+    $('#pfUpdated').textContent = `${new Date(data.updatedAt).toLocaleTimeString('zh-CN', { hour12: false })} 更新`;
+    if (showToast) toast('持仓诊断已更新');
+  } catch (err) {
+    $('#pfDiagList').innerHTML = `<div class="diag-empty">诊断失败：${esc(err.message)}</div>`;
+    $('#pfUpdated').textContent = '诊断失败';
+    if (showToast) toast(`诊断失败：${err.message}`, true);
+  } finally {
+    state.portfolio.loading = false;
+  }
+}
+
+function removeHolding(code) {
+  state.portfolio.holdings = state.portfolio.holdings.filter((h) => h.code !== code);
+  saveHoldings();
+  renderPfEditor();
+  diagnosePortfolio();
+}
+
 /* ------------------------------ 路由 ------------------------------ */
 
 function setView(view) {
   $$('.view').forEach((v) => v.classList.remove('active'));
   $(`#view-${view}`)?.classList.add('active');
   $$('#tabs a').forEach((a) => a.classList.toggle('active', a.dataset.view === view));
-  const titles = { market: '行情总览', screen: '量化选股', trade: '模拟交易', docs: '策略说明' };
+  const titles = {
+    market: '行情总览',
+    screen: '量化选股',
+    portfolio: '持仓信息',
+    stock: '个股分析',
+    trade: '模拟交易',
+    docs: '策略说明',
+  };
   if (titles[view]) document.title = `${titles[view]} · MONEY 量化终端`;
   if (view === 'trade') {
     refreshPrices();
@@ -785,6 +1138,16 @@ function setView(view) {
   } else {
     clearInterval(state.trade.timer);
   }
+  if (view === 'portfolio') {
+    renderPfSummary();
+    if (state.portfolio.holdings.length) diagnosePortfolio();
+    clearInterval(state.portfolio.timer);
+    state.portfolio.timer = setInterval(() => {
+      if (location.hash.startsWith('#/portfolio') && !state.portfolio.loading) diagnosePortfolio();
+    }, 60_000);
+  } else {
+    clearInterval(state.portfolio.timer);
+  }
   window.scrollTo({ top: 0, behavior: 'instant' });
 }
 
@@ -792,7 +1155,7 @@ function route() {
   const hash = location.hash || '#/market';
   const [path, query] = hash.replace(/^#\//, '').split('?');
   const params = new URLSearchParams(query || '');
-  const view = ['market', 'screen', 'stock', 'trade', 'docs'].includes(path) ? path : 'market';
+  const view = ['market', 'screen', 'portfolio', 'stock', 'trade', 'docs'].includes(path) ? path : 'market';
 
   if (view === 'stock') {
     setView('stock');
@@ -813,6 +1176,7 @@ function route() {
       refreshPrices().then(updateOrderQuote);
     }
   }
+  if (view === 'screen' && state.screenMeta && !state.screen && !state.screenLoading) runStrategy();
 }
 
 /* ------------------------------ 事件绑定 ------------------------------ */
@@ -855,6 +1219,66 @@ function bindEvents() {
 
   // 选股
   $('#runScreen').addEventListener('click', runScreen);
+  $('#strategyStrip').addEventListener('click', (e) => {
+    const card = e.target.closest('[data-strategy]');
+    if (card) selectStrategy(card.dataset.strategy);
+  });
+  $('#recGrid').addEventListener('click', async (e) => {
+    const add = e.target.closest('[data-add-holding]');
+    if (add) {
+      e.stopPropagation();
+      const code = add.dataset.addHolding;
+      let price = 0;
+      let name = add.dataset.name || '';
+      try {
+        const data = await apiGet(`/api/quotes?codes=${code}`);
+        const q = data.items?.[0];
+        if (q) {
+          price = q.price;
+          name = q.name || name;
+        }
+      } catch {
+        /* 允许先添加再由诊断补齐 */
+      }
+      const idx = state.portfolio.holdings.findIndex((h) => h.code === code);
+      const holding = { code, name, shares: 100, cost: price || 0 };
+      if (idx >= 0) state.portfolio.holdings[idx] = { ...state.portfolio.holdings[idx], ...holding };
+      else state.portfolio.holdings.push(holding);
+      saveHoldings();
+      renderPfEditor();
+      toast(`已加入持仓 ${name || code}，可在「持仓信息」调整股数与成本`);
+      return;
+    }
+    const card = e.target.closest('.rec-item');
+    if (card?.dataset.code) setStockRoute(card.dataset.code);
+  });
+
+  // 持仓信息
+  $('#pfAdd').addEventListener('click', addHolding);
+  $('#pfImport').addEventListener('click', importPaperHoldings);
+  $('#pfRefresh').addEventListener('click', () => diagnosePortfolio(true));
+  $('#pfCode').addEventListener('keydown', (e) => { if (e.key === 'Enter') addHolding(); });
+  $('#pfTable').addEventListener('click', (e) => {
+    const del = e.target.closest('[data-pf-del]');
+    if (del) removeHolding(del.dataset.pfDel);
+  });
+  $('#pfTable').addEventListener('change', (e) => {
+    const sharesInput = e.target.closest('[data-pf-shares]');
+    const costInput = e.target.closest('[data-pf-cost]');
+    const code = sharesInput?.dataset.pfShares || costInput?.dataset.pfCost;
+    if (!code) return;
+    const holding = state.portfolio.holdings.find((h) => h.code === code);
+    if (!holding) return;
+    if (sharesInput) holding.shares = Math.max(0, Math.floor(Number(sharesInput.value) || 0));
+    if (costInput) holding.cost = Math.max(0, Number(costInput.value) || 0);
+    saveHoldings();
+    diagnosePortfolio();
+  });
+  $('#pfDiagList').addEventListener('click', (e) => {
+    if (e.target.closest('button')) return;
+    const item = e.target.closest('.diag-item');
+    if (item?.dataset.code) setStockRoute(item.dataset.code);
+  });
 
   // 个股
   $('#stockSearchInput').addEventListener('input', (e) => onSearchInput(e.target.value));
@@ -1013,8 +1437,12 @@ function bindEvents() {
 async function boot() {
   startClock();
   state.trade.account = loadAccount();
+  loadHoldings();
   renderAccount();
   renderOrders();
+  renderPfSummary();
+  renderPfEditor();
+  renderPfDiagnosis();
   bindEvents();
   $('#stockQuick').innerHTML = [
     ['600519', '贵州茅台'], ['300750', '宁德时代'],

@@ -7,6 +7,8 @@ const path = require('node:path');
 
 const ds = require('./lib/datasource');
 const quant = require('./lib/quant');
+const strategies = require('./lib/strategies');
+const advisor = require('./lib/advisor');
 
 const PORT = Number(process.env.PORT) || 8000;
 const HOST = '0.0.0.0';
@@ -285,7 +287,28 @@ const server = http.createServer(async (req, res) => {
         factors: quant.FACTORS,
         boards: quant.BOARDS,
         defaults: quant.DEFAULT_FILTERS,
+        strategies: strategies.list(),
+        defaultStrategy: strategies.DEFAULT_STRATEGY,
       });
+    }
+
+    if (pathname === '/api/strategies' && req.method === 'GET') {
+      return sendJson(res, 200, {
+        ok: true,
+        defaultStrategy: strategies.DEFAULT_STRATEGY,
+        items: strategies.list(),
+      });
+    }
+
+    if (pathname === '/api/recommend' && req.method === 'POST') {
+      const body = await readBody(req);
+      return sendJson(res, 200, await quant.recommend(body));
+    }
+
+    if (pathname === '/api/portfolio/diagnose' && req.method === 'POST') {
+      const body = await readBody(req);
+      const result = await advisor.diagnose(body.holdings);
+      return sendJson(res, 200, result);
     }
 
     if (pathname === '/api/backtest' && req.method === 'GET') {

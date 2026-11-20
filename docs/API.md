@@ -84,7 +84,106 @@
 
 ## GET /api/screen/meta
 
-返回因子定义、板块列表与默认过滤参数，用于渲染选股控制面板。
+返回因子定义、板块列表、默认过滤参数，以及策略库（`strategies`、`defaultStrategy`），用于渲染选股控制面板与策略卡片。
+
+## GET /api/strategies
+
+返回 8 个可选策略的 `key`、名称、标签、参考来源、说明、参数与入选阈值。
+
+```json
+{
+  "ok": true,
+  "defaultStrategy": "alpha158",
+  "items": [{
+    "key": "turtle", "name": "海龟通道突破", "tag": "趋势",
+    "source": "海龟交易法则 · vnpy", "desc": "价格站上 20 日高点附近且中期趋势向上时入选…",
+    "params": { "entry": 20 }, "minScore": 62
+  }]
+}
+```
+
+## POST /api/recommend
+
+按指定策略扫描全市场并返回荐股列表。
+
+```json
+{
+  "strategy": "alpha158",
+  "params": {},
+  "scanCount": 800,
+  "candidates": 100,
+  "limit": 12,
+  "filters": {
+    "minPrice": 2, "maxPrice": 800, "minFloatCap": 20, "maxFloatCap": 8000,
+    "minTurnover": 0.5, "maxTurnover": 30, "peMax": 150,
+    "boards": ["main", "gem", "star"], "excludeST": true
+  }
+}
+```
+
+返回在 `/api/screen` 结构基础上增加：
+
+```json
+{
+  "ok": true,
+  "strategy": "alpha158",
+  "items": [{
+    "code": "601939", "name": "建设银行", "price": 12.76, "changePct": 1.2,
+    "score": 79.4, "grade": "A",
+    "reasons": ["20日动量 +12.9%", "60日趋势 +20.6%", "均线多头排列"],
+    "warnings": [],
+    "factors": { "momentum": 91, "trend": 100, "volume": 42, "volatility": 88, "valuation": 96, "growth": 40 },
+    "technical": { "ma20": 12.1, "rsi14": 64.3, "atrPct": 0.023, "rangePos": 0.86 }
+  }],
+  "meta": {
+    "scanned": 800, "filtered": 512, "evaluated": 99, "qualified": 23,
+    "strategy": { "key": "alpha158", "name": "Alpha158 多因子", "minScore": 58 },
+    "market": { "up": 320, "down": 480, "breadth": 40, "regime": "震荡" },
+    "elapsedMs": 1450
+  },
+  "disclaimer": "策略结果由公开行情与财报数据计算，仅供研究参考，不构成投资建议。"
+}
+```
+
+## POST /api/portfolio/diagnose
+
+请求体为当前持仓（最多 30 只），返回每只股票的实时信号与组合汇总。
+
+```json
+{
+  "holdings": [
+    { "code": "600519", "shares": 100, "cost": 1500 },
+    { "code": "000001", "shares": 1000, "cost": 11.5 }
+  ]
+}
+```
+
+返回：
+
+```json
+{
+  "ok": true,
+  "items": [{
+    "code": "600519", "name": "贵州茅台", "price": 1485.75, "changePct": 1.75,
+    "shares": 100, "cost": 1500, "marketValue": 148575, "pnl": -1425, "pnlPct": -0.95,
+    "action": "add", "actionLabel": "加仓", "tone": "up",
+    "confidence": 88, "score": 4.8, "riskLevel": "低",
+    "reasons": ["站上 MA20", "MA20 高于 MA60", "短中期多头排列", "MACD 红柱"],
+    "warnings": ["注意仓位控制，分批执行"],
+    "levels": { "support": 1424.26, "resistance": 1489.09, "stopLoss": 1337.17, "takeProfit": 1489.09, "riskPct": 10 },
+    "technical": { "ma20": 1424.26, "ma60": 1332.61, "rsi14": 68.1, "macdHist": 0.79, "volRatio": 0.94 }
+  }],
+  "summary": {
+    "count": 2, "marketValue": 160795, "costValue": 161500, "pnl": -705,
+    "pnlPct": -0.44, "dayPnl": 900,
+    "actionCounts": { "add": 1, "hold": 1 },
+    "riskAlerts": ["贵州茅台 占组合 92.4%，集中度偏高"]
+  },
+  "updatedAt": "2026-11-20T14:01:35.000Z"
+}
+```
+
+`action` 取值：`buy` 买入、`add` 加仓、`hold` 持有、`watch` 观望、`reduce` 减仓、`exit` 清仓。
 
 ## POST /api/screen
 
