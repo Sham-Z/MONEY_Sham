@@ -273,6 +273,190 @@ export function drawKline(canvas, series, opts = {}) {
   return layout;
 }
 
+export function drawIntraday(canvas, data, opts = {}) {
+  const { ctx, w, h } = prepare(canvas, opts.height || 440);
+  const bars = data?.bars || [];
+  if (bars.length < 2) {
+    text(ctx, '暂无分时数据', w / 2, h / 2, { align: 'center', size: 12 });
+    return null;
+  }
+  const padL = 6;
+  const padR = 62;
+  const padT = 14;
+  const padB = 22;
+  const gap = 12;
+  const plotW = w - padL - padR;
+  const totalH = h - padT - padB;
+  const priceH = totalH * 0.72;
+  const volH = totalH - priceH - gap;
+  const priceTop = padT;
+  const priceBot = priceTop + priceH;
+  const volTop = priceBot + gap;
+  const volBot = volTop + volH;
+
+  const prevClose = data.prevClose || bars[0].price;
+  const values = bars.flatMap((b) => [b.price, b.avg != null ? b.avg : b.price]);
+  values.push(prevClose);
+  let lo = Math.min(...values);
+  let hi = Math.max(...values);
+  const pad = (hi - lo) * 0.12 || Math.max(0.01, prevClose * 0.002);
+  lo -= pad;
+  hi += pad;
+  const n = bars.length;
+  const x = (i) => padL + (i / (n - 1)) * plotW;
+  const y = (v) => priceBot - ((v - lo) / (hi - lo)) * priceH;
+  const up = bars[n - 1].price >= prevClose;
+  const mainColor = up ? UP : DOWN;
+
+  // 网格 + 价格刻度
+  for (let i = 0; i <= 4; i += 1) {
+    const v = lo + ((hi - lo) * i) / 4;
+    const yy = y(v);
+    ctx.strokeStyle = GRID;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(padL, yy);
+    ctx.lineTo(w - padR, yy);
+    ctx.stroke();
+    text(ctx, fmt(v), w - padR + 7, yy, { size: 9.5 });
+  }
+
+  // 昨收基准线
+  ctx.save();
+  ctx.setLineDash([4, 4]);
+  ctx.strokeStyle = 'rgba(160, 180, 210, 0.42)';
+  ctx.beginPath();
+  ctx.moveTo(padL, y(prevClose));
+  ctx.lineTo(w - padR, y(prevClose));
+  ctx.stroke();
+  ctx.restore();
+  text(ctx, '昨收', padL + 3, y(prevClose) - 7, { size: 9, color: 'rgba(180,200,225,0.65)' });
+
+  // 价格面积
+  const grad = ctx.createLinearGradient(0, priceTop, 0, priceBot);
+  grad.addColorStop(0, up ? 'rgba(255,77,99,0.24)' : 'rgba(20,201,138,0.22)');
+  grad.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.beginPath();
+  ctx.moveTo(x(0), priceBot);
+  bars.forEach((b, i) => ctx.lineTo(x(i), y(b.price)));
+  ctx.lineTo(x(n - 1), priceBot);
+  ctx.closePath();
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  // 价格线
+  ctx.beginPath();
+  bars.forEach((b, i) => (i ? ctx.lineTo(x(i), y(b.price)) : ctx.moveTo(x(i), y(b.price))));
+  ctx.strokeStyle = mainColor;
+  ctx.lineWidth = 1.6;
+  ctx.stroke();
+
+  // 均价线
+  ctx.beginPath();
+  let started = false;
+  bars.forEach((b, i) => {
+    if (b.avg == null) return;
+    if (!started) {
+      ctx.moveTo(x(i), y(b.avg));
+      started = true;
+    } else ctx.lineTo(x(i), y(b.avg));
+  });
+  ctx.strokeStyle = '#f5c542';
+  ctx.lineWidth = 1.1;
+  ctx.globalAlpha = 0.9;
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+
+  // 成交量
+  const maxVol = Math.max(...bars.map((b) => b.volume)) || 1;
+  for (let i = 0; i < n; i += 1) {
+    const b = bars[i];
+    const prev = i ? bars[i - 1].price : prevClose;
+    const vh = (b.volume / maxVol) * (volH - 3);
+    const bw = Math.max(1, plotW / n - 0.6);
+    ctx.fillStyle = b.price >= prev ? 'rgba(255,77,99,0.5)' : 'rgba(20,201,138,0.5)';
+    ctx.fillRect(x(i) - bw / 2, volBot - vh, bw, vh);
+  }
+  text(ctx, 'VOL', padL + 2, volTop + 7, { size: 9 });
+
+  // 买卖点
+  for (const m of data.markers || []) {
+    if (m.index == null || m.index >= n) continue;
+    const cx = x(m.index);
+    const cy = y(m.price);
+    const buy = m.side === 'buy';
+    const color = buy ? UP : DOWN;
+    ctx.fillStyle = color;
+    ctx.strokeStyle = 'rgba(8, 15, 26, 0.9)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    if (buy) {
+      ctx.moveTo(cx, cy - 7);
+      ctx.lineTo(cx - 6, cy + 3);
+      ctx.lineTo(cx + 6, cy + 3);
+    } else {
+      ctx.moveTo(cx, cy + 7);
+      ctx.lineTo(cx - 6, cy - 3);
+      ctx.lineTo(cx + 6, cy - 3);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    text(ctx, buy ? 'B' : 'S', cx, cy + (buy ? 15 : -15), {
+      align: 'center',
+      size: 9,
+      weight: 700,
+      color,
+    });
+    ctx.strokeStyle = buy ? 'rgba(255,77,99,0.35)' : 'rgba(20,201,138,0.35)';
+    ctx.setLineDash([2, 3]);
+    ctx.beginPath();
+    ctx.moveTo(cx, cy + (buy ? 4 : -4));
+    ctx.lineTo(cx, volBot);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // 时间轴
+  const labelCount = w < 600 ? 4 : 6;
+  for (let i = 0; i < labelCount; i += 1) {
+    const idx = Math.round((i / (labelCount - 1)) * (n - 1));
+    text(ctx, bars[idx].time, x(idx), h - padB / 2 + 2, {
+      align: i === 0 ? 'left' : i === labelCount - 1 ? 'right' : 'center',
+      size: 9,
+    });
+  }
+
+  // 十字光标
+  if (opts.hoverIndex != null) {
+    const i = Math.max(0, Math.min(n - 1, opts.hoverIndex));
+    ctx.save();
+    ctx.setLineDash([3, 3]);
+    ctx.strokeStyle = 'rgba(180, 205, 235, 0.45)';
+    ctx.beginPath();
+    ctx.moveTo(x(i), priceTop);
+    ctx.lineTo(x(i), volBot);
+    ctx.stroke();
+    ctx.restore();
+    const b = bars[i];
+    if (b) {
+      ctx.fillStyle = '#243146';
+      ctx.fillRect(w - padR + 2, y(b.price) - 8, 56, 16);
+      text(ctx, fmt(b.price), w - padR + 30, y(b.price), { align: 'center', color: '#e6edf9', size: 9.5 });
+    }
+  }
+
+  return {
+    indexFromX: (px) => Math.max(0, Math.min(n - 1, Math.round(((px - padL) / plotW) * (n - 1)))),
+    priceTop,
+    priceBot,
+    volTop,
+    volBot,
+    w,
+    h,
+  };
+}
+
 export function drawEquity(canvas, curve, hoverIndex = null) {
   const { ctx, w, h } = prepare(canvas, 260);
   if (!curve || curve.length < 2) {

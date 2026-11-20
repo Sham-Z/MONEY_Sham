@@ -9,6 +9,7 @@ const ds = require('./lib/datasource');
 const quant = require('./lib/quant');
 const strategies = require('./lib/strategies');
 const advisor = require('./lib/advisor');
+const intraday = require('./lib/intraday');
 
 const PORT = Number(process.env.PORT) || 8000;
 const HOST = '0.0.0.0';
@@ -303,6 +304,30 @@ const server = http.createServer(async (req, res) => {
     if (pathname === '/api/recommend' && req.method === 'POST') {
       const body = await readBody(req);
       return sendJson(res, 200, await quant.recommend(body));
+    }
+
+    if (pathname === '/api/picks' && req.method === 'GET') {
+      const result = await quant.picks({
+        limit: Number(url.searchParams.get('limit')) || 20,
+        scanCount: Number(url.searchParams.get('scanCount')) || 600,
+        candidates: Number(url.searchParams.get('candidates')) || 90,
+        force: url.searchParams.get('refresh') === '1',
+      });
+      return sendJson(res, 200, result);
+    }
+
+    if (pathname === '/api/stock/advice' && req.method === 'GET') {
+      const result = await advisor.strategyAdvice(
+        url.searchParams.get('code'),
+        { days: Number(url.searchParams.get('days')) || 400 },
+      );
+      return sendJson(res, 200, result);
+    }
+
+    if (pathname === '/api/intraday' && req.method === 'GET') {
+      const code = String(url.searchParams.get('code') || '').replace(/\D/g, '').slice(0, 6);
+      if (code.length !== 6) return fail(res, 400, '股票代码需为 6 位数字');
+      return sendJson(res, 200, await intraday.analyze(code));
     }
 
     if (pathname === '/api/portfolio/diagnose' && req.method === 'POST') {

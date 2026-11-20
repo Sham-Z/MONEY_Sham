@@ -1,4 +1,4 @@
-import { drawSparkline, drawKline, drawEquity } from './chart.js';
+import { drawSparkline, drawKline, drawEquity, drawIntraday } from './chart.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -78,7 +78,12 @@ const state = {
   screenStrategy: 'alpha158',
   screenParams: {},
   screenLoading: false,
-  stock: { code: '', name: '', period: 'day', series: null, detail: null, strategy: 'ma_cross', btDays: 500, layout: null },
+  stock: {
+    code: '', name: '', period: 'day', series: null, detail: null,
+    strategy: 'ma_cross', btDays: 500, layout: null,
+    intraday: null, advice: null, adviceLoading: false, intradayLayout: null,
+  },
+  picks: { data: null, loading: false, timer: null },
   trade: { account: null, prices: {}, timer: null },
   portfolio: { holdings: [], diagnosis: null, timer: null, loading: false },
 };
@@ -469,6 +474,110 @@ function renderScreenResult(data) {
     .join('');
 }
 
+/* ------------------------------ 荐股榜单 ------------------------------ */
+
+async function loadPicks(force = false) {
+  if (state.picks.loading) return;
+  state.picks.loading = true;
+  if (!state.picks.data) {
+    $('#marketPicksGrid').innerHTML = '<div class="empty">正在计算多策略综合评分…</div>';
+    $('#picksTable tbody').innerHTML = '<tr><td colspan="9" class="empty">正在扫描候选池并运行 8 个策略…</td></tr>';
+  }
+  try {
+    const data = await apiGet(`/api/picks?limit=20${force ? '&refresh=1' : ''}`);
+    state.picks.data = data;
+    renderMarketPicks(data);
+    renderPicks(data);
+    if (force) toast('荐股榜单已刷新');
+  } catch (err) {
+    $('#marketPicksGrid').innerHTML = `<div class="empty">榜单加载失败：${esc(err.message)}</div>`;
+    $('#picksTable tbody').innerHTML = `<tr><td colspan="9" class="empty">榜单加载失败：${esc(err.message)}</td></tr>`;
+    $('#picksUpdated').textContent = '加载失败';
+    if (force) toast(`榜单刷新失败：${err.message}`, true);
+  } finally {
+    state.picks.loading = false;
+  }
+}
+
+function renderMarketPicks(data) {
+  const items = (data.items || []).slice(0, 5);
+  if (!items.length) {
+    $('#marketPicksGrid').innerHTML = '<div class="empty">暂无可展示的荐股结果</div>';
+    return;
+  }
+  const m = data.meta || {};
+  $('#marketPicksHint').textContent = `${new Date(m.asOf).toLocaleTimeString('zh-CN', { hour12: false })} 更新 · 候选 ${m.candidates} 只 · 8 策略综合`;
+  $('#marketPicksGrid').innerHTML = items
+    .map(
+      (r, i) => `<div class="pick-mini" data-code="${esc(r.code)}">
+        <div class="pm-head">
+          <span class="grade-badge ${esc(r.grade)}">${esc(r.grade)}</span>
+          <b>${esc(r.name)}</b><code>${esc(r.code)}</code>
+          <span class="pm-rank">#${i + 1}</span>
+        </div>
+        <div class="pm-body">
+          <div class="pm-score">${r.consensus.toFixed(1)}<small>综合分</small></div>
+          <div class="pm-px ${cls(r.changePct)}">${fmt.price(r.price)}<small>${fmt.pct(r.changePct)}</small></div>
+        </div>
+        <div class="pm-foot">
+          <span>命中 ${r.qualified}/${r.strategyHits.length}</span>
+          <span>最佳：${esc(r.bestStrategy?.name || '--')}</span>
+        </div>
+        <div class="pm-reason">${esc((r.reasons || [])[0] || r.label)}</div>
+      </div>`,
+    )
+    .join('');
+}
+
+function renderPicks(data) {
+  const m = data.meta || {};
+  const items = data.items || [];
+  $('#picksUpdated').textContent = `${new Date(m.asOf).toLocaleTimeString('zh-CN', { hour12: false })} 更新`;
+  $('#picksMeta').innerHTML = `
+    <span>扫描股票<b>${m.scanned ?? 0}</b></span>
+    <span>通过过滤<b>${m.filtered ?? 0}</b></span>
+    <span>技术评估<b>${m.evaluated ?? 0}</b></span>
+    <span>候选池<b>${m.candidates ?? 0}</b></span>
+    <span>市场温度<b>${m.market?.regime || '--'} (${m.market?.breadth ?? '--'}%)</b></span>
+    <span>参与策略<b>${m.strategyCount ?? 8}</b></span>
+    <span>耗时<b>${m.elapsedMs ?? 0} ms</b></span>`;
+  $('#picksNote').textContent = data.disclaimer || '';
+
+  $('#picksStrategyStats').innerHTML = (data.strategyStats || [])
+    .map(
+      (s) => `<div class="strategy-score-card">
+        <div class="ssc-top"><b>${esc(s.name)}</b><span class="st-tag">${esc(s.tag)}</span></div>
+        <div class="ssc-score">${s.avgScore.toFixed(1)}<small>平均分</small></div>
+        <div class="ssc-bar"><i style="width:${Math.min(100, s.avgScore)}%"></i></div>
+        <div class="ssc-foot">命中 ${s.passCount}/${m.candidates ?? '--'} · ${s.passRate.toFixed(0)}%</div>
+      </div>`,
+    )
+    .join('');
+
+  const tbody = $('#picksTable tbody');
+  if (!items.length) {
+    tbody.innerHTML = '<tr><td colspan="9" class="empty">暂无符合条件的结果</td></tr>';
+    return;
+  }
+  tbody.innerHTML = items
+    .map(
+      (r, i) => `<tr data-code="${esc(r.code)}">
+        <td class="num" style="color:var(--dim)">${i + 1}</td>
+        <td><div class="name-cell"><b>${esc(r.name)}</b><span>${esc(r.code)}</span></div></td>
+        <td class="num ${cls(r.changePct)}">${fmt.price(r.price)}</td>
+        <td class="num ${cls(r.changePct)}">${fmt.pct(r.changePct)}</td>
+        <td><div class="score-cell"><div class="score-bar"><i style="width:${Math.min(100, r.consensus)}%"></i></div>
+          <span class="score-val">${r.consensus.toFixed(1)}</span>
+          <span class="grade-badge ${esc(r.grade)}">${esc(r.label)}</span></div></td>
+        <td class="num">${r.qualified}/${r.strategyHits.length}</td>
+        <td><div class="name-cell"><b>${esc(r.bestStrategy?.name || '--')}</b><span>得分 ${r.bestStrategy?.score ?? '--'}</span></div></td>
+        <td><div class="sig-list">${(r.reasons || []).slice(0, 2).map((s) => `<span class="sig">${esc(s)}</span>`).join('')}</div></td>
+        <td><button class="btn ghost" data-open="${esc(r.code)}">分析</button></td>
+      </tr>`,
+    )
+    .join('');
+}
+
 /* ------------------------------ 个股分析 ------------------------------ */
 
 function setStockRoute(code) {
@@ -480,33 +589,182 @@ async function loadStock(code, period = state.stock.period) {
     toast('请输入 6 位股票代码', true);
     return;
   }
+  const codeChanged = state.stock.code !== code;
   state.stock.code = code;
   state.stock.period = period;
+  if (codeChanged) {
+    state.stock.advice = null;
+    state.stock.intraday = null;
+    $('#adviceBody').innerHTML = '<div class="empty">正在运行 7 个回测策略并计算权重…</div>';
+    $('#adviceCard').hidden = false;
+  }
   $('#stockMain').hidden = false;
   $('#backtestCard').hidden = false;
+  $$('#periodSwitch button').forEach((b) => b.classList.toggle('active', b.dataset.period === period));
   const emptyEl = $('#klineEmpty');
   emptyEl.style.display = 'grid';
   emptyEl.textContent = '加载行情中…';
 
-  const count = period === 'week' ? 260 : 320;
   try {
-    const detail = await apiGet(`/api/stock?code=${code}&period=${period}&count=${count}`);
-    state.stock.detail = detail;
-    state.stock.series = detail.series;
-    $('#klineEmpty').style.display = 'none';
-    renderStockHeader(detail);
-    state.stock.layout = drawKline($('#klineCanvas'), detail.series, { showMacd: true });
-    renderTech(detail);
-    renderFund(detail);
-    renderBacktestControls(detail.strategies);
-    document.title = `${detail.name || code} · MONEY 量化终端`;
+    if (period === 'min') {
+      $('#chartTitle').textContent = '分时走势';
+      $('#maLegend').innerHTML = '<i style="background:#ff4d63"></i>价格 <i style="background:#f5c542"></i>均价 <i class="mark-buy">▲</i>买点 <i class="mark-sell">▼</i>卖点';
+      $('#intradaySummary').hidden = false;
+      if (!state.stock.detail || state.stock.detail.code !== code) {
+        const detail = await apiGet(`/api/stock?code=${code}&period=day&count=320`);
+        applyStockDetail(detail);
+      }
+      await loadIntraday(code);
+    } else {
+      $('#chartTitle').textContent = period === 'week' ? '周 K 线' : '日 K 线';
+      $('#maLegend').innerHTML = '<i style="background:#f5c542"></i>MA5 <i style="background:#3ba9ff"></i>MA10 <i style="background:#a78bfa"></i>MA20 <i style="background:#7dd3a0"></i>MA60';
+      $('#intradaySummary').hidden = true;
+      const count = period === 'week' ? 260 : 320;
+      const detail = await apiGet(`/api/stock?code=${code}&period=${period}&count=${count}`);
+      applyStockDetail(detail);
+      $('#klineEmpty').style.display = 'none';
+      state.stock.layout = drawKline($('#klineCanvas'), detail.series, { showMacd: true });
+      state.stock.intradayLayout = null;
+    }
   } catch (err) {
     const empty = $('#klineEmpty');
     empty.style.display = 'grid';
     empty.textContent = `加载失败：${err.message}`;
     toast(`个股数据加载失败：${err.message}`, true);
   }
+
+  if (codeChanged || !state.stock.advice) loadAdvice(code);
 }
+
+function applyStockDetail(detail) {
+  state.stock.detail = detail;
+  state.stock.series = detail.series;
+  state.stock.name = detail.name || '';
+  renderStockHeader(detail);
+  renderTech(detail);
+  renderFund(detail);
+  renderBacktestControls(detail.strategies);
+  document.title = `${detail.name || detail.code} · MONEY 量化终端`;
+}
+
+async function loadAdvice(code) {
+  state.stock.adviceLoading = true;
+  try {
+    const data = await apiGet(`/api/stock/advice?code=${code}`);
+    if (state.stock.code !== code) return;
+    state.stock.advice = data;
+    $('#adviceCard').hidden = false;
+    renderAdvice(data);
+  } catch (err) {
+    $('#adviceBody').innerHTML = `<div class="empty">多策略建议生成失败：${esc(err.message)}</div>`;
+    $('#adviceAsOf').textContent = '生成失败';
+  } finally {
+    state.stock.adviceLoading = false;
+  }
+}
+
+function adviceTone(action) {
+  if (action === 'buy') return 'buy';
+  if (action === 'sell') return 'sell';
+  return 'hold';
+}
+
+function renderAdvice(d) {
+  const tone = adviceTone(d.action);
+  const rows = (d.strategies || [])
+    .map(
+      (s) => `<tr>
+        <td><div class="name-cell"><b>${esc(s.name)}</b><span>${esc(s.desc || '')}</span></div></td>
+        <td class="num ${s.metrics.totalReturn >= 0 ? 'up' : 'down'}">${fmt.pct(s.metrics.totalReturn)}</td>
+        <td class="num">${s.metrics.winRate}%</td>
+        <td class="num">${s.metrics.profitFactor != null ? s.metrics.profitFactor.toFixed(2) : '--'}</td>
+        <td class="num ${s.metrics.maxDrawdown < 0 ? 'down' : ''}">${fmt.pct(s.metrics.maxDrawdown)}</td>
+        <td class="num">${s.metrics.closedTrades}</td>
+        <td><div class="weight-cell"><div class="weight-bar"><i style="width:${Math.min(100, s.weight)}%"></i></div><span>${s.weight.toFixed(1)}%</span></div></td>
+        <td><span class="sig ${s.signal === 'long' ? 'buy' : 'sell'}">${s.signal === 'long' ? '持仓' : '空仓'}${s.fresh ? ' · 新信号' : ''}</span></td>
+      </tr>`,
+    )
+    .join('');
+
+  $('#adviceAsOf').textContent = `回测 ${d.days} 交易日 · ${new Date(d.updatedAt).toLocaleTimeString('zh-CN', { hour12: false })} 更新`;
+  $('#adviceBody').innerHTML = `
+    <div class="advice-top">
+      <div class="verdict ${tone}">
+        <span>综合建议</span>
+        <b>${esc(d.actionLabel)}</b>
+        <em>置信度 ${d.confidence}%</em>
+      </div>
+      <div class="advice-gauge">
+        <div class="gauge-num">${d.score.toFixed(1)}<small>/100</small></div>
+        <div class="gauge-label">加权综合评分</div>
+        <div class="gauge-track"><i class="${tone}" style="width:${Math.min(100, Math.max(0, d.score))}%"></i></div>
+        <div class="gauge-split">
+          <span class="up">多头权重 ${d.consensus.bullWeightPct}%</span>
+          <span class="down">空头权重 ${d.consensus.bearWeightPct}%</span>
+        </div>
+      </div>
+      <div class="advice-reasons">
+        <div class="advice-consensus ${tone}">${esc(d.consensus.label)}</div>
+        <b>${d.consensus.longCount}/${d.consensus.total} 个策略当前持仓</b>
+        <ul>${(d.reasons || []).map((r) => `<li>${esc(r)}</li>`).join('')}</ul>
+        ${(d.warnings || []).length ? `<div class="advice-warn">${d.warnings.map((w) => `<span>⚠ ${esc(w)}</span>`).join('')}</div>` : ''}
+      </div>
+    </div>
+    <div class="table-wrap advice-table-wrap">
+      <table class="data-table advice-table">
+        <thead><tr>
+          <th>策略</th><th class="num">区间收益</th><th class="num">胜率</th><th class="num">盈亏比</th>
+          <th class="num">最大回撤</th><th class="num">完成交易</th><th>权重</th><th>当前信号</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+    <p class="fineprint">${esc(d.disclaimer)}</p>`;
+}
+
+async function loadIntraday(code) {
+  const empty = $('#klineEmpty');
+  empty.style.display = 'grid';
+  empty.textContent = '加载分时数据…';
+  try {
+    const data = await apiGet(`/api/intraday?code=${code}`);
+    if (state.stock.code !== code) return;
+    state.stock.intraday = data;
+    $('#klineEmpty').style.display = 'none';
+    state.stock.intradayLayout = drawIntraday($('#klineCanvas'), data);
+    renderIntradaySummary(data);
+  } catch (err) {
+    empty.style.display = 'grid';
+    empty.textContent = `分时数据加载失败：${err.message}`;
+    toast(`分时数据加载失败：${err.message}`, true);
+  }
+}
+
+function renderIntradaySummary(d) {
+  const s = d.summary || {};
+  const tone = s.stance === '偏多' ? 'up' : s.stance === '偏空' ? 'down' : 'flat';
+  const markers = (d.markers || [])
+    .slice(-6)
+    .reverse()
+    .map(
+      (m) => `<span class="marker ${m.side}">
+        <b>${m.side === 'buy' ? '买点' : '卖点'}</b> ${esc(m.time)} · ${fmt.price(m.price)}
+        <em>${esc((m.reasons || []).join(' / '))}</em>
+      </span>`,
+    )
+    .join('');
+  $('#intradaySummary').innerHTML = `
+    <div class="intraday-stats">
+      <span>分时结论 <b class="${tone}">${esc(s.stance || '--')}</b></span>
+      <span>现价 <b class="${cls(d.changePct)}">${fmt.price(d.price)} ${fmt.pct(d.changePct)}</b></span>
+      <span>VWAP <b>${fmt.price(d.vwap)}</b></span>
+      <span>高 / 低 <b>${fmt.price(d.high)} / ${fmt.price(d.low)}</b></span>
+      <span>买卖点 <b><i class="dot-buy"></i>${s.buyCount || 0} / <i class="dot-sell"></i>${s.sellCount || 0}</b></span>
+      <span>数据源 <b>${esc(d.source || '--')}</b></span>
+    </div>
+    <div class="marker-list">${markers || '<span class="hint">当日暂未触发多策略共识买卖点</span>'}</div>`;
+}
+
 
 function renderStockHeader(d) {
   const q = d.quote || {};
@@ -627,8 +885,8 @@ function renderBtParams() {
   const s = currentStrategy();
   if (!s) return;
   const labels = {
-    fast: '快线周期', slow: '慢线周期', period: '动量周期',
-    low: 'RSI 买入', high: 'RSI 卖出', entry: '突破周期', exit: '离场周期',
+    fast: '快线周期', slow: '慢线周期', signal: '信号周期', period: '计算周期', mult: '标准差倍数',
+    low: '低位阈值', high: '高位阈值', entry: '突破周期', exit: '离场周期',
   };
   $('#btParams').innerHTML =
     `<span class="hint" style="flex-basis:100%">${esc(s.desc)}</span>` +
@@ -669,6 +927,7 @@ function renderBacktest(data) {
     ['最大回撤', fmt.pct(m.maxDrawdown), m.maxDrawdown],
     ['夏普比率', m.sharpe.toFixed(2), m.sharpe],
     ['胜率', `${m.winRate}%`, m.winRate - 50],
+    ['盈亏比', m.profitFactor != null ? m.profitFactor.toFixed(2) : '--', m.profitFactor - 1],
     ['交易次数', String(m.tradeCount), 0],
     ['基准收益', fmt.pct(m.benchmarkReturn), m.benchmarkReturn],
     ['期末资金', fmt.money(m.finalEquity), m.finalEquity - m.capital],
@@ -1122,6 +1381,7 @@ function setView(view) {
   $$('#tabs a').forEach((a) => a.classList.toggle('active', a.dataset.view === view));
   const titles = {
     market: '行情总览',
+    picks: '荐股榜单',
     screen: '量化选股',
     portfolio: '持仓信息',
     stock: '个股分析',
@@ -1129,6 +1389,16 @@ function setView(view) {
     docs: '策略说明',
   };
   if (titles[view]) document.title = `${titles[view]} · MONEY 量化终端`;
+  if (view === 'picks' || view === 'market') {
+    if (!state.picks.data) loadPicks();
+    clearInterval(state.picks.timer);
+    state.picks.timer = setInterval(() => {
+      const h = location.hash;
+      if ((h.startsWith('#/picks') || h.startsWith('#/market')) && !state.picks.loading) loadPicks();
+    }, 180_000);
+  } else {
+    clearInterval(state.picks.timer);
+  }
   if (view === 'trade') {
     refreshPrices();
     clearInterval(state.trade.timer);
@@ -1155,7 +1425,7 @@ function route() {
   const hash = location.hash || '#/market';
   const [path, query] = hash.replace(/^#\//, '').split('?');
   const params = new URLSearchParams(query || '');
-  const view = ['market', 'screen', 'portfolio', 'stock', 'trade', 'docs'].includes(path) ? path : 'market';
+  const view = ['market', 'picks', 'screen', 'portfolio', 'stock', 'trade', 'docs'].includes(path) ? path : 'market';
 
   if (view === 'stock') {
     setView('stock');
@@ -1164,6 +1434,7 @@ function route() {
     else if (!code) {
       $('#stockMain').hidden = true;
       $('#backtestCard').hidden = true;
+      $('#adviceCard').hidden = true;
       $('#stockHeader').innerHTML = '<div class="empty-block">输入股票代码或名称开始分析</div>';
     }
     return;
@@ -1211,11 +1482,14 @@ function bindEvents() {
 
   // 榜单 / 表格跳转
   document.addEventListener('click', (e) => {
-    const row = e.target.closest('.board-row, #quoteTable tbody tr, #screenTable tbody tr');
+    const row = e.target.closest('.board-row, #quoteTable tbody tr, #screenTable tbody tr, #picksTable tbody tr, .pick-mini');
     if (!row || row.querySelector('.empty')) return;
     const code = row.dataset.code;
     if (code) setStockRoute(code);
   });
+
+  // 荐股榜单
+  $('#refreshPicks').addEventListener('click', () => loadPicks(true));
 
   // 选股
   $('#runScreen').addEventListener('click', runScreen);
@@ -1313,22 +1587,45 @@ function bindEvents() {
   });
   $('#runBacktest').addEventListener('click', runBacktest);
 
-  // K 线十字光标
+  // 图表十字光标（分时 / K 线）
   const klineCanvas = $('#klineCanvas');
   klineCanvas.addEventListener('mousemove', (e) => {
-    const layout = state.stock.layout;
-    const series = state.stock.series;
-    if (!layout || !series) return;
     const rect = klineCanvas.getBoundingClientRect();
     const px = e.clientX - rect.left;
     const py = e.clientY - rect.top;
+    const tip = $('#klineTip');
+    if (state.stock.period === 'min') {
+      const data = state.stock.intraday;
+      const layout = state.stock.intradayLayout;
+      if (!data || !layout) return;
+      const idx = layout.indexFromX(px);
+      state.stock.intradayLayout = drawIntraday(klineCanvas, data, { hoverIndex: idx });
+      const b = data.bars[idx];
+      if (!b) return;
+      const prev = idx ? data.bars[idx - 1].price : data.prevClose;
+      const chg = ((b.price / prev - 1) * 100).toFixed(2);
+      tip.innerHTML = `
+        <div><span class="k">时间</span> ${b.time}</div>
+        <div><span class="k">价格</span> ${fmt.price(b.price)} <span class="k">均价</span> ${fmt.price(b.avg)}</div>
+        <div><span class="k">较前</span> <span class="${cls(Number(chg))}">${fmt.pct(Number(chg))}</span></div>
+        <div><span class="k">成交量</span> ${fmt.money(b.volume)}股</div>
+        <div><span class="k">昨收</span> ${fmt.price(data.prevClose)}</div>`;
+      tip.hidden = false;
+      const tw = tip.offsetWidth || 160;
+      const left = px + 18 + tw > rect.width ? px - tw - 14 : px + 18;
+      tip.style.left = `${Math.max(4, left)}px`;
+      tip.style.top = `${Math.min(Math.max(6, py - 60), rect.height - 120)}px`;
+      return;
+    }
+    const layout = state.stock.layout;
+    const series = state.stock.series;
+    if (!layout || !series) return;
     const idx = layout.indexFromX(px);
     state.stock.layout = drawKline(klineCanvas, series, { showMacd: true, hoverIndex: idx, mouseY: py });
     const b = series.bars[idx];
     if (!b) return;
     const prev = series.bars[idx - 1]?.close ?? b.open;
     const chg = ((b.close / prev - 1) * 100).toFixed(2);
-    const tip = $('#klineTip');
     tip.innerHTML = `
       <div><span class="k">日期</span> ${b.date}</div>
       <div><span class="k">开</span> ${fmt.price(b.open)} <span class="k">高</span> ${fmt.price(b.high)}</div>
@@ -1344,7 +1641,11 @@ function bindEvents() {
   });
   klineCanvas.addEventListener('mouseleave', () => {
     $('#klineTip').hidden = true;
-    if (state.stock.series) state.stock.layout = drawKline(klineCanvas, state.stock.series, { showMacd: true });
+    if (state.stock.period === 'min' && state.stock.intraday) {
+      state.stock.intradayLayout = drawIntraday(klineCanvas, state.stock.intraday);
+    } else if (state.stock.series) {
+      state.stock.layout = drawKline(klineCanvas, state.stock.series, { showMacd: true });
+    }
   });
 
   // 回测净值光标
@@ -1425,7 +1726,11 @@ function bindEvents() {
   window.addEventListener('resize', () => {
     clearTimeout(resizeTimer);
     resizeTimer = setTimeout(() => {
-      if (state.stock.series) state.stock.layout = drawKline($('#klineCanvas'), state.stock.series, { showMacd: true });
+      if (state.stock.period === 'min' && state.stock.intraday) {
+        state.stock.intradayLayout = drawIntraday($('#klineCanvas'), state.stock.intraday);
+      } else if (state.stock.series) {
+        state.stock.layout = drawKline($('#klineCanvas'), state.stock.series, { showMacd: true });
+      }
       if (state.stock.btCurve) drawEquity($('#equityCanvas'), state.stock.btCurve);
       if (state.overview) renderIndexCards(state.overview);
     }, 160);
@@ -1463,6 +1768,7 @@ async function boot() {
   loadQuotes();
   renderPositions();
   loadOverview();
+  loadPicks();
   initScreenControls();
   setInterval(loadOverview, 60_000);
 }

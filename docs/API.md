@@ -185,6 +185,104 @@
 
 `action` 取值：`buy` 买入、`add` 加仓、`hold` 持有、`watch` 观望、`reduce` 减仓、`exit` 清仓。
 
+## GET /api/picks
+
+实时多策略综合荐股榜单。对同一候选池同时运行 8 个选股策略，按平均得分与命中策略数聚合，缓存 3 分钟。
+
+| 参数 | 默认 | 说明 |
+| --- | --- | --- |
+| `limit` | 20 | 返回条数（5–40） |
+| `scanCount` | 600 | 快照扫描数量（200–1200） |
+| `candidates` | 90 | 技术评估候选数（30–120） |
+| `refresh` | - | `1` 时强制重新扫描 |
+
+```json
+{
+  "ok": true,
+  "items": [{
+    "code": "600919", "name": "江苏银行", "price": 13.66, "changePct": 0.74,
+    "consensus": 75.2, "score": 75.2, "grade": "A", "label": "强烈推荐",
+    "qualified": 6, "qualifiedNames": ["低波动价值", "海龟通道突破"],
+    "bestStrategy": { "key": "low_vol_value", "name": "低波动价值", "score": 83.1 },
+    "strategyHits": [{ "key": "low_vol_value", "name": "低波动价值", "score": 83.1, "passed": true }],
+    "reasons": ["20日动量 +8.2%", "低估值 + 低波动"]
+  }],
+  "strategyStats": [{ "key": "low_vol_value", "name": "低波动价值", "avgScore": 57.5, "passCount": 12, "passRate": 20 }],
+  "meta": {
+    "strategyCount": 8, "candidates": 60, "scanned": 600, "filtered": 402,
+    "evaluated": 90, "market": { "regime": "震荡", "breadth": 46 },
+    "asOf": "2026-11-20T15:01:00.000Z", "elapsedMs": 1380
+  }
+}
+```
+
+## GET /api/stock/advice
+
+个股多策略综合建议。对同一只股票运行 7 个回测策略，用「胜率 × 盈利质量 × 盈亏比」归一化得到权重，再把各策略当前持仓/空仓信号加权为「买入 / 持有 / 卖出」。
+
+| 参数 | 默认 | 说明 |
+| --- | --- | --- |
+| `code` | 必填 | 6 位代码 |
+| `days` | 400 | 回测交易日数（160–800） |
+
+```json
+{
+  "ok": true,
+  "code": "600519", "name": "贵州茅台",
+  "action": "hold", "actionLabel": "持有", "tone": "warn",
+  "score": 49.7, "confidence": 77,
+  "consensus": {
+    "total": 7, "longCount": 4, "flatCount": 3,
+    "bullWeightPct": 36.6, "bearWeightPct": 63.4, "label": "策略分歧，等待确认"
+  },
+  "topStrategy": { "key": "bollinger", "name": "布林带回归", "weight": 30.5 },
+  "reasons": ["4/7 个策略当前持仓，多头权重 36.6%", "布林带回归：胜率 66.7% · 区间收益 51.2% · 当前空仓"],
+  "warnings": ["策略信号分歧：4/7 个策略当前持仓"],
+  "strategies": [{
+    "key": "ma_cross", "name": "双均线金叉", "weight": 7.5,
+    "signal": "long", "signalLabel": "持仓", "fresh": false,
+    "metrics": {
+      "winRate": 60, "totalReturn": 38.2, "annualized": 21.4,
+      "maxDrawdown": -18.6, "sharpe": 1.1, "profitFactor": 2.3,
+      "closedTrades": 10, "tradeCount": 21, "exposure": 63.4, "benchmarkReturn": 25.1
+    }
+  }],
+  "updatedAt": "2026-11-20T15:02:00.000Z"
+}
+```
+
+`action` 取值：`buy` 买入、`hold` 持有、`sell` 卖出。权重经等权混合平滑，避免单一策略过度主导。
+
+## GET /api/intraday
+
+当日分时数据与分钟级多策略买卖点。数据优先取腾讯当日分时，失败时回退新浪 5 分钟线。
+
+| 参数 | 说明 |
+| --- | --- |
+| `code` | 6 位代码 |
+
+```json
+{
+  "ok": true,
+  "code": "600519", "name": "贵州茅台", "date": "2026-11-20",
+  "source": "腾讯财经分时", "prevClose": 1460.21, "price": 1485.75, "changePct": 1.75,
+  "high": 1488, "low": 1426, "vwap": 1457.15,
+  "bars": [{ "time": "09:30", "price": 1450.89, "avg": 1450.89, "volume": 23500 }],
+  "markers": [{
+    "index": 211, "time": "14:21", "price": 1445.5, "side": "buy", "label": "买点",
+    "score": 2.7, "count": 2, "reasons": ["分钟均线金叉", "放量突破"]
+  }],
+  "summary": {
+    "stance": "偏多", "score": 2.1, "buyCount": 4, "sellCount": 3,
+    "aboveVwap": true, "rsi": 63.2, "ma5": 1481.4, "ma20": 1470.8, "volRatio": 1.2,
+    "lastMarker": { "time": "14:45", "side": "buy", "price": 1468.88 }
+  },
+  "updatedAt": "2026-11-20T15:05:00.000Z"
+}
+```
+
+买卖点由 VWAP 突破、分钟均线、MACD、RSI、量价突破五类规则加权投票生成，综合强度低于 1.5 或方向冲突时不输出。
+
 ## POST /api/screen
 
 ```json
@@ -220,13 +318,19 @@
 | 参数 | 说明 |
 | --- | --- |
 | `code` | 股票代码 |
-| `strategy` | `ma_cross` / `momentum` / `rsi_reversion` / `breakout` |
+| `strategy` | `ma_cross` / `momentum` / `rsi_reversion` / `breakout` / `macd` / `bollinger` / `kdj` |
 | `days` | 回测区间交易日数（120–800） |
-| `fast` `slow` `period` `low` `high` `entry` `exit` | 策略参数 |
+| `fast` `slow` `signal` `period` `mult` `low` `high` `entry` `exit` | 策略参数 |
 
 ```json
 {
-  "metrics": { "totalReturn": -0.09, "annualized": -0.05, "maxDrawdown": -20.41, "sharpe": 0.06, "winRate": 33.3, "tradeCount": 30, "benchmarkReturn": 4.31, "finalEquity": 999087.88 },
+  "metrics": {
+    "totalReturn": -0.09, "annualized": -0.05, "maxDrawdown": -20.41, "sharpe": 0.06,
+    "winRate": 33.3, "tradeCount": 30, "closedTrades": 15, "profitFactor": 1.42,
+    "avgWinPct": 4.1, "avgLossPct": -2.8, "exposure": 58.2,
+    "benchmarkReturn": 4.31, "finalEquity": 999087.88
+  },
+  "current": { "signal": 0, "label": "空仓", "daysSinceChange": 6, "date": "2026-11-20" },
   "curve": [{ "date": "2024-12-02", "equity": 1.0, "benchmark": 1.0 }],
   "trades": [{ "date": "2025-01-06", "side": "buy", "price": 1485.7, "shares": 600, "amount": 891420, "pnl": null }]
 }
