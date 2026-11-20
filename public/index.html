@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MONEY · A股量化终端</title>
+<meta name="description" content="接入腾讯财经、新浪财经、东方财富数据的 A 股量化选股与模拟交易终端" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%230b1220'/%3E%3Cpath d='M20 70 L38 46 L52 58 L80 26' stroke='%23ffb547' stroke-width='9' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
+<link rel="stylesheet" href="/css/app.css" />
+</head>
+<body>
+<div class="bg-grid" aria-hidden="true"></div>
+
+<header class="topbar">
+  <div class="brand">
+    <div class="brand-mark">M</div>
+    <div class="brand-text">
+      <strong>MONEY</strong>
+      <span>A股量化终端 · QUANT TERMINAL</span>
+    </div>
+  </div>
+  <div class="ticker" id="ticker"></div>
+  <div class="topbar-meta">
+    <span class="chip dot" id="market-status">数据接入中</span>
+    <span class="chip clock" id="clock">--:--:--</span>
+  </div>
+</header>
+
+<nav class="tabs" id="tabs">
+  <a href="#/market" data-view="market">行情总览</a>
+  <a href="#/screen" data-view="screen">量化选股</a>
+  <a href="#/stock" data-view="stock">个股分析</a>
+  <a href="#/trade" data-view="trade">模拟交易</a>
+  <a href="#/docs" data-view="docs">策略说明</a>
+</nav>
+
+<main id="main">
+
+  <!-- 行情总览 -->
+  <section class="view" id="view-market">
+    <div class="index-grid" id="indexGrid"></div>
+
+    <div class="market-meta card slim">
+      <div class="meta-item"><span>两市成交额</span><strong id="turnoverTotal">--</strong></div>
+      <div class="meta-item"><span>数据源</span><strong>腾讯财经 · 新浪财经 · 东方财富</strong></div>
+      <div class="meta-item"><span>刷新时间</span><strong id="overviewTime">--</strong></div>
+      <div class="meta-item"><span>股票池</span><strong id="universeCount">沪深京 A 股 5500+</strong></div>
+    </div>
+
+    <div class="board-grid">
+      <div class="card board">
+        <div class="card-head"><h3>涨幅榜</h3><span class="hint">按涨跌幅排序</span></div>
+        <div class="board-body" id="boardGainers"></div>
+      </div>
+      <div class="card board">
+        <div class="card-head"><h3>跌幅榜</h3><span class="hint">按涨跌幅排序</span></div>
+        <div class="board-body" id="boardLosers"></div>
+      </div>
+      <div class="card board">
+        <div class="card-head"><h3>成交额榜</h3><span class="hint">资金最活跃</span></div>
+        <div class="board-body" id="boardActives"></div>
+      </div>
+      <div class="card board">
+        <div class="card-head"><h3>换手率榜</h3><span class="hint">交易情绪</span></div>
+        <div class="board-body" id="boardTurnover"></div>
+      </div>
+    </div>
+
+    <div class="card section-card">
+      <div class="card-head">
+        <h3>全市场行情</h3>
+        <div class="toolbar">
+          <input type="search" id="quoteSearch" placeholder="搜索代码或名称，如 600519 / 茅台" />
+          <select id="quoteSort">
+            <option value="changepercent">按涨跌幅</option>
+            <option value="amount">按成交额</option>
+            <option value="turnoverratio">按换手率</option>
+            <option value="mktcap">按总市值</option>
+            <option value="per">按市盈率</option>
+          </select>
+          <button class="btn ghost" id="quoteAsc">降序</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table" id="quoteTable">
+          <thead>
+            <tr>
+              <th>代码 / 名称</th><th class="num">现价</th><th class="num">涨跌幅</th>
+              <th class="num">涨跌</th><th class="num">换手率</th><th class="num">成交额</th>
+              <th class="num">市盈率</th><th class="num">流通市值</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="pager">
+        <button class="btn ghost" id="quotePrev">上一页</button>
+        <span id="quotePageInfo">第 1 页</span>
+        <button class="btn ghost" id="quoteNext">下一页</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- 量化选股 -->
+  <section class="view" id="view-screen">
+    <div class="screen-layout">
+      <aside class="card control-panel">
+        <div class="card-head"><h3>因子权重</h3><span class="hint">权重越高越重要</span></div>
+        <div class="sliders" id="weightSliders"></div>
+
+        <div class="card-head sub"><h3>股票过滤</h3><span class="hint">先粗筛再打分</span></div>
+        <div class="filter-grid" id="filterGrid"></div>
+
+        <div class="board-filter" id="boardFilter"></div>
+        <button class="btn primary block" id="runScreen">运行量化选股</button>
+        <p class="fineprint" id="screenNote">选股基于公开行情与财报数据计算，仅供研究参考，不构成投资建议。</p>
+      </aside>
+
+      <div class="screen-results">
+        <div class="card slim meta-bar" id="screenMeta"></div>
+        <div class="card section-card">
+          <div class="card-head">
+            <h3>选股结果</h3>
+            <span class="hint" id="screenHint">设置权重后点击「运行量化选股」</span>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table screen-table" id="screenTable">
+              <thead>
+                <tr>
+                  <th>#</th><th>代码 / 名称</th><th class="num">现价</th><th class="num">涨跌幅</th>
+                  <th class="num">综合得分</th><th class="factor-col">动量</th><th class="factor-col">趋势</th>
+                  <th class="factor-col">量能</th><th class="factor-col">波动</th><th class="factor-col">估值</th>
+                  <th class="factor-col">成长</th><th>信号</th>
+                </tr>
+              </thead>
+              <tbody><tr><td colspan="12" class="empty">尚未运行选股</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 个股分析 -->
+  <section class="view" id="view-stock">
+    <div class="stock-search">
+      <div class="search-box">
+        <input type="search" id="stockSearchInput" placeholder="输入股票代码或名称，如 600519、宁德时代" autocomplete="off" />
+        <div class="suggest" id="stockSuggest" hidden></div>
+      </div>
+      <div class="search-tips" id="stockQuick"></div>
+    </div>
+
+    <div class="stock-header card slim" id="stockHeader">
+      <div class="empty-block">请输入股票代码或名称开始分析</div>
+    </div>
+
+    <div class="stock-main" hidden id="stockMain">
+      <div class="card chart-card">
+        <div class="card-head">
+          <h3>价格走势</h3>
+          <div class="toolbar">
+            <div class="seg" id="periodSwitch">
+              <button data-period="day" class="active">日K</button>
+              <button data-period="week">周K</button>
+            </div>
+            <span class="legend" id="maLegend"></span>
+          </div>
+        </div>
+        <div class="chart-wrap">
+          <canvas id="klineCanvas" height="440"></canvas>
+          <div class="chart-tip" id="klineTip" hidden></div>
+          <div class="chart-empty" id="klineEmpty" hidden>加载行情中…</div>
+        </div>
+      </div>
+
+      <div class="side-col">
+        <div class="card">
+          <div class="card-head"><h3>技术指标</h3><span class="hint" id="techAsOf"></span></div>
+          <div class="kv-grid" id="techGrid"></div>
+          <div class="signals" id="stockSignals"></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>最新财报</h3><span class="hint" id="fundDate"></span></div>
+          <div class="fund-grid" id="fundGrid"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card section-card" id="backtestCard" hidden>
+      <div class="card-head">
+        <h3>策略回测</h3>
+        <div class="toolbar">
+          <select id="btStrategy"></select>
+          <input type="number" id="btDays" value="500" min="120" max="800" step="20" title="回测天数" />
+          <button class="btn primary" id="runBacktest">运行回测</button>
+        </div>
+      </div>
+      <div class="bt-params" id="btParams"></div>
+      <div class="bt-metrics" id="btMetrics"></div>
+      <div class="bt-body">
+        <div class="chart-wrap bt-chart">
+          <canvas id="equityCanvas" height="260"></canvas>
+          <div class="chart-tip" id="equityTip" hidden></div>
+        </div>
+        <div class="table-wrap bt-trades">
+          <table class="data-table">
+            <thead><tr><th>日期</th><th>方向</th><th class="num">价格</th><th class="num">数量</th><th class="num">金额</th><th class="num">盈亏</th></tr></thead>
+            <tbody id="btTrades"><tr><td colspan="6" class="empty">运行回测后显示交易记录</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 模拟交易 -->
+  <section class="view" id="view-trade">
+    <div class="account-grid" id="accountGrid"></div>
+
+    <div class="trade-layout">
+      <div class="card order-card">
+        <div class="card-head"><h3>下单</h3><span class="hint">模拟撮合 · 本地账户</span></div>
+        <label class="field">
+          <span>股票代码</span>
+          <input id="orderCode" placeholder="600519" maxlength="6" inputmode="numeric" />
+        </label>
+        <div class="order-quote" id="orderQuote">输入代码后自动获取现价</div>
+        <label class="field">
+          <span>委托价格</span>
+          <input id="orderPrice" type="number" step="0.01" placeholder="0.00" />
+        </label>
+        <label class="field">
+          <span>委托数量（股）</span>
+          <input id="orderQty" type="number" step="100" min="100" placeholder="100" />
+        </label>
+        <div class="qty-shortcuts">
+          <button data-qty="100">100</button><button data-qty="500">500</button>
+          <button data-qty="1000">1000</button><button data-qty="half">半仓</button>
+          <button data-qty="all">全仓</button>
+        </div>
+        <div class="order-summary" id="orderSummary">--</div>
+        <div class="order-actions">
+          <button class="btn buy" id="btnBuy">买入</button>
+          <button class="btn sell" id="btnSell">卖出</button>
+        </div>
+        <p class="fineprint">费用按佣金万 2.5（最低 5 元）+ 过户费 0.001% + 卖出印花税 0.05% 估算。</p>
+      </div>
+
+      <div class="trade-tables">
+        <div class="card section-card">
+          <div class="card-head">
+            <h3>持仓</h3>
+            <div class="toolbar">
+              <button class="btn ghost" id="refreshPositions">刷新行情</button>
+              <button class="btn ghost danger" id="resetAccount">重置账户</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table" id="positionTable">
+              <thead><tr><th>代码 / 名称</th><th class="num">持仓</th><th class="num">成本价</th><th class="num">现价</th><th class="num">市值</th><th class="num">浮动盈亏</th><th class="num">盈亏率</th><th></th></tr></thead>
+              <tbody><tr><td colspan="8" class="empty">暂无持仓</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="card section-card">
+          <div class="card-head"><h3>委托记录</h3><span class="hint">最近 100 笔</span></div>
+          <div class="table-wrap">
+            <table class="data-table" id="orderTable">
+              <thead><tr><th>时间</th><th>方向</th><th>代码 / 名称</th><th class="num">价格</th><th class="num">数量</th><th class="num">金额</th><th class="num">费用</th></tr></thead>
+              <tbody><tr><td colspan="7" class="empty">暂无委托</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 策略说明 -->
+  <section class="view" id="view-docs">
+    <div class="docs-grid">
+      <article class="card doc">
+        <h2>数据接入</h2>
+        <p>平台服务端实时聚合三类公开数据，统一清洗后输出给浏览器：</p>
+        <ul>
+          <li><strong>腾讯财经</strong> — 指数与个股实时快照、前复权日/周 K 线；</li>
+          <li><strong>新浪财经</strong> — 全市场 A 股（约 5500 只）行情榜单与排序分页；</li>
+          <li><strong>东方财富数据中心</strong> — 最新定期报告中的营收、净利润、EPS、ROE、同比增速。</li>
+        </ul>
+        <p>所有请求均在服务端代理并做 TTL 缓存，降低对上游接口的压力；上游异常时回退到最近一次成功结果。</p>
+      </article>
+
+      <article class="card doc">
+        <h2>多因子选股模型</h2>
+        <p>选股分两阶段：先用快照数据按价格、市值、换手、PE、板块等条件粗筛，再对流动性最好的候选股拉取 150 根日 K，计算六类因子并加权打分。</p>
+        <ul>
+          <li><strong>动量趋势</strong>：20 日与 60 日涨幅加权，叠加区间位置；</li>
+          <li><strong>均线结构</strong>：价格与 MA5/10/20/60 多头排列程度；</li>
+          <li><strong>量能异动</strong>：5 日均量相对 20 日均量的放大倍数；</li>
+          <li><strong>波动控制</strong>：20 日年化波动率，越低越稳定；</li>
+          <li><strong>估值水平</strong>：PE 在候选池中的分位；</li>
+          <li><strong>业绩成长</strong>：最新财报净利润与营收同比增速。</li>
+        </ul>
+        <p>因子经分位归一化后按权重加权，得分 0–100，权重可在选股页实时调整。</p>
+      </article>
+
+      <article class="card doc">
+        <h2>回测与模拟交易</h2>
+        <p>回测按日频收盘价撮合，双边计佣金 0.025%、过户费 0.001%，卖出加收 0.05% 印花税，并计入 0.05% 滑点，A 股按 100 股整手交易。</p>
+        <p>模拟交易账户保存在浏览器本地（localStorage），提供买入、卖出、持仓盈亏与委托记录，仅用于策略验证，不涉及任何真实资金。</p>
+      </article>
+
+      <article class="card doc">
+        <h2>风险提示</h2>
+        <p>本平台为技术演示与量化研究工具，行情数据来自公开网页接口，可能存在延迟或缺失；因子得分与回测结果不预测未来收益。任何依据本平台内容做出的投资决策，风险由使用者自行承担。</p>
+      </article>
+    </div>
+  </section>
+
+</main>
+
+<footer class="footer">
+  <span>MONEY · A股量化终端</span>
+  <span>数据：腾讯财经 / 新浪财经 / 东方财富 · 仅供研究，不构成投资建议</span>
+</footer>
+
+<div class="toast" id="toast" hidden></div>
+
+<script type="module" src="/js/app.js"></script>
+</body>
+</html>
