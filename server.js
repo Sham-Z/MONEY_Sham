@@ -202,6 +202,10 @@ async function readBody(req) {
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   const pathname = url.pathname;
+  const startedAt = Date.now();
+  res.on('finish', () => {
+    console.log(`${req.method} ${pathname} ${res.statusCode} ${Date.now() - startedAt}ms`);
+  });
 
   try {
     if (!pathname.startsWith('/api/')) {
