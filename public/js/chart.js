@@ -173,6 +173,87 @@ export function drawKline(canvas, series, opts = {}) {
   ctx.restore();
   ctx.globalAlpha = 1;
 
+  // 缠论：仅绘制已确认结构；买卖点放在右侧确认日，而非事后标注至极值日。
+  if (opts.showChan === true && series.chan) {
+    const { strokes = [], pivots = [], points = [] } = series.chan;
+    const validIndex = (i) => Number.isInteger(i) && i >= 0 && i < n;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(padL, priceTop, plotW, priceH);
+    ctx.clip();
+
+    for (const p of pivots) {
+      if (!validIndex(p.startIndex) || !validIndex(p.endIndex) || !validIndex(p.confirmIndex)) continue;
+      if (!Number.isFinite(p.low) || !Number.isFinite(p.high)) continue;
+      const left = Math.max(padL, x(p.startIndex) - step / 2);
+      const right = Math.min(padL + plotW, x(p.endIndex) + step / 2);
+      const top = yPrice(p.high);
+      const bottom = yPrice(p.low);
+      ctx.fillStyle = 'rgba(59,169,255,0.09)';
+      ctx.strokeStyle = 'rgba(59,169,255,0.42)';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 3]);
+      ctx.fillRect(left, top, Math.max(1, right - left), Math.max(1, bottom - top));
+      ctx.strokeRect(left, top, Math.max(1, right - left), Math.max(1, bottom - top));
+    }
+    ctx.setLineDash([]);
+
+    const latestPivot = pivots.filter((p) => validIndex(p.endIndex) && validIndex(p.confirmIndex)).at(-1);
+    if (latestPivot && Number.isFinite(latestPivot.high)) {
+      text(ctx, '中枢', Math.max(padL + 3, x(latestPivot.startIndex)), yPrice(latestPivot.high) + 8, {
+        color: '#7cc4ff',
+        size: 9,
+        weight: 600,
+      });
+    }
+
+    ctx.beginPath();
+    for (const s of strokes) {
+      if (!validIndex(s.startIndex) || !validIndex(s.endIndex) || !validIndex(s.confirmIndex)) continue;
+      if (!Number.isFinite(s.startPrice) || !Number.isFinite(s.endPrice)) continue;
+      ctx.moveTo(x(s.startIndex), yPrice(s.startPrice));
+      ctx.lineTo(x(s.endIndex), yPrice(s.endPrice));
+    }
+    ctx.strokeStyle = '#e879f9';
+    ctx.lineWidth = 1.6;
+    ctx.globalAlpha = 0.92;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+
+    for (const p of points) {
+      if (!validIndex(p.confirmIndex) || !Number.isFinite(p.price)) continue;
+      const cx = x(p.confirmIndex);
+      const cy = yPrice(p.price);
+      const buy = p.side === 'buy';
+      const color = buy ? UP : DOWN;
+      const offset = buy ? 10 : -10;
+      ctx.fillStyle = color;
+      ctx.strokeStyle = 'rgba(8,15,26,0.9)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      if (buy) {
+        ctx.moveTo(cx, cy + offset - 5);
+        ctx.lineTo(cx - 5, cy + offset + 4);
+        ctx.lineTo(cx + 5, cy + offset + 4);
+      } else {
+        ctx.moveTo(cx, cy + offset + 5);
+        ctx.lineTo(cx - 5, cy + offset - 4);
+        ctx.lineTo(cx + 5, cy + offset - 4);
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      text(ctx, p.type || (buy ? 'B' : 'S'), cx, cy + (buy ? 25 : -25), {
+        align: 'center',
+        color,
+        size: 9,
+        weight: 700,
+      });
+    }
+    ctx.restore();
+  }
+
   // 成交量
   const maxVol = Math.max(...bars.map((b) => b.volume)) || 1;
   ctx.strokeStyle = GRID;
