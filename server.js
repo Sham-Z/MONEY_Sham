@@ -323,7 +323,28 @@ server.headersTimeout = 35_000;
 
 server.listen(PORT, HOST, () => {
   console.log(`[money] A-share quant terminal listening on http://${HOST}:${PORT}`);
+  setTimeout(upstreamSelfTest, 600);
 });
+
+/** 启动时探测上游数据源连通性，便于线上排障 */
+async function upstreamSelfTest() {
+  const checks = [
+    ['腾讯行情', () => ds.quotes(['sh000001'])],
+    ['新浪行情', () => ds.sinaList({ page: 1, size: 5 })],
+    ['腾讯K线', () => ds.kline('sh600519', { count: 5 })],
+    ['东方财富财报', () => ds.fundamentals()],
+  ];
+  for (const [name, fn] of checks) {
+    const t = Date.now();
+    try {
+      const result = await fn();
+      const size = Array.isArray(result) ? result.length : result.count ?? 'ok';
+      console.log(`[selftest] ${name} ok ${Date.now() - t}ms (${size})`);
+    } catch (err) {
+      console.log(`[selftest] ${name} fail ${Date.now() - t}ms: ${err.message}`);
+    }
+  }
+}
 
 for (const signal of ['SIGTERM', 'SIGINT']) {
   process.on(signal, () => {
