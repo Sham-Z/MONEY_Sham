@@ -170,11 +170,12 @@ async function serveStatic(req, res, pathname) {
       return res.end();
     }
     const isHtml = ext === '.html';
+    const noCache = isHtml || ext === '.js' || ext === '.css';
     res.writeHead(200, {
       'Content-Type': MIME[ext] || 'application/octet-stream',
       'Content-Length': stat.size,
       ETag: etag,
-      'Cache-Control': isHtml ? 'no-cache' : 'public, max-age=3600',
+      'Cache-Control': noCache ? 'no-cache' : 'public, max-age=3600',
       'X-Content-Type-Options': 'nosniff',
     });
     if (req.method === 'HEAD') return res.end();

@@ -123,6 +123,10 @@ async function loadOverview(force = false) {
     const badge = $('#market-status');
     badge.textContent = '数据源异常';
     badge.className = 'chip dot error';
+    if (!state.overview) {
+      $('#indexGrid').innerHTML =
+        '<div class="index-card"><div class="idx-name">行情数据暂不可用</div><div class="idx-price">--</div><div class="idx-row">请稍后刷新页面重试</div></div>';
+    }
   }
 }
 
@@ -349,15 +353,16 @@ async function loadStock(code, period = state.stock.period) {
   state.stock.period = period;
   $('#stockMain').hidden = false;
   $('#backtestCard').hidden = false;
-  $('#klineEmpty').hidden = false;
-  $('#klineEmpty').textContent = '加载行情中…';
+  const emptyEl = $('#klineEmpty');
+  emptyEl.style.display = 'grid';
+  emptyEl.textContent = '加载行情中…';
 
   const count = period === 'week' ? 260 : 320;
   try {
     const detail = await apiGet(`/api/stock?code=${code}&period=${period}&count=${count}`);
     state.stock.detail = detail;
     state.stock.series = detail.series;
-    $('#klineEmpty').hidden = true;
+    $('#klineEmpty').style.display = 'none';
     renderStockHeader(detail);
     state.stock.layout = drawKline($('#klineCanvas'), detail.series, { showMacd: true });
     renderTech(detail);
@@ -365,8 +370,9 @@ async function loadStock(code, period = state.stock.period) {
     renderBacktestControls(detail.strategies);
     document.title = `${detail.name || code} · MONEY 量化终端`;
   } catch (err) {
-    $('#klineEmpty').hidden = false;
-    $('#klineEmpty').textContent = `加载失败：${err.message}`;
+    const empty = $('#klineEmpty');
+    empty.style.display = 'grid';
+    empty.textContent = `加载失败：${err.message}`;
     toast(`个股数据加载失败：${err.message}`, true);
   }
 }
@@ -1021,10 +1027,15 @@ async function boot() {
     if (btn) setStockRoute(btn.dataset.code);
   });
 
-  await Promise.all([loadOverview(), initScreenControls()]);
+  // 先渲染视图骨架，再异步加载数据，避免首屏空白
+  $('#indexGrid').innerHTML = ['上证指数', '深证成指', '创业板指', '沪深300']
+    .map((n) => `<div class="index-card"><div class="idx-name">${n}</div><div class="idx-price">--</div><div class="idx-row">加载中…</div><canvas height="46"></canvas></div>`)
+    .join('');
+  route();
   loadQuotes();
   renderPositions();
-  route();
+  loadOverview();
+  initScreenControls();
   setInterval(loadOverview, 60_000);
 }
 
