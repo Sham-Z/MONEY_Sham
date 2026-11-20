@@ -70,7 +70,7 @@
   "fundamentals": { "reportDate": "2026-09-30", "revenue": 133283652508, "netProfit": 64467425981, "eps": 51.53, "roe": 24.47, "revenueYoY": 1.82, "profitYoY": -0.25 },
   "series": { "dates": [], "bars": [], "ma": {}, "rsi": [], "macd": {} },
   "technical": { "ma20": 1424.26, "rsi14": 68.1, "macdHist": 0.793, "mom20": 0.1129, "vol20": 0.264, "volRatio": 0.94, "signals": ["均线多头排列"] },
-  "strategies": [{ "key": "ma_cross", "name": "双均线金叉", "params": { "fast": 5, "slow": 20 } }]
+  "strategies": [{ "key": "ma_cross", "name": "双均线趋势", "params": { "fast": 5, "slow": 20 } }]
 }
 ```
 
@@ -93,11 +93,11 @@
 ```json
 {
   "ok": true,
-  "defaultStrategy": "alpha158",
+  "defaultStrategy": "volume_price",
   "items": [{
-    "key": "turtle", "name": "海龟通道突破", "tag": "趋势",
-    "source": "海龟交易法则 · vnpy", "desc": "价格站上 20 日高点附近且中期趋势向上时入选…",
-    "params": { "entry": 20 }, "minScore": 62
+    "key": "volume_price", "name": "量价共振", "tag": "量能",
+    "source": "microsoft/qlib · OBV 量价因子", "desc": "OBV 与价格同向、放量上涨或缩量回踩得分更高…",
+    "params": { "period": 20 }, "minScore": 58
   }]
 }
 ```
@@ -108,13 +108,14 @@
 
 ```json
 {
-  "strategy": "alpha158",
+  "strategy": "volume_price",
   "params": {},
   "scanCount": 800,
   "candidates": 100,
   "limit": 12,
   "filters": {
     "minPrice": 2, "maxPrice": 800, "minFloatCap": 20, "maxFloatCap": 8000,
+    "minMarketCap": 0, "maxMarketCap": 100000,
     "minTurnover": 0.5, "maxTurnover": 30, "peMax": 150,
     "boards": ["main", "gem", "star"], "excludeST": true
   }
@@ -126,7 +127,7 @@
 ```json
 {
   "ok": true,
-  "strategy": "alpha158",
+  "strategy": "volume_price",
   "items": [{
     "code": "601939", "name": "建设银行", "price": 12.76, "changePct": 1.2,
     "score": 79.4, "grade": "A",
@@ -137,7 +138,7 @@
   }],
   "meta": {
     "scanned": 800, "filtered": 512, "evaluated": 99, "qualified": 23,
-    "strategy": { "key": "alpha158", "name": "Alpha158 多因子", "minScore": 58 },
+    "strategy": { "key": "volume_price", "name": "量价共振", "minScore": 58 },
     "market": { "up": 320, "down": 480, "breadth": 40, "regime": "震荡" },
     "elapsedMs": 1450
   },
@@ -187,13 +188,15 @@
 
 ## GET /api/picks
 
-实时多策略综合荐股榜单。对同一候选池同时运行 8 个选股策略，按平均得分与命中策略数聚合，缓存 3 分钟。
+多策略综合荐股榜单。对同一候选池同时运行统一 8 个技术策略，按 `0.72 × 平均得分 + 0.28 × 达标策略占比 × 100` 聚合，缓存 3 分钟；筛选条件参与缓存 key。
 
 | 参数 | 默认 | 说明 |
 | --- | --- | --- |
 | `limit` | 20 | 返回条数（5–40） |
 | `scanCount` | 600 | 快照扫描数量（200–1200） |
 | `candidates` | 90 | 技术评估候选数（30–120） |
+| `minPrice` / `maxPrice` | 2 / 800 | 股价区间，单位为元 |
+| `minMarketCap` / `maxMarketCap` | 0 / 100000 | 总市值区间，单位为亿元 |
 | `refresh` | - | `1` 时强制重新扫描 |
 
 ```json
@@ -202,15 +205,16 @@
   "items": [{
     "code": "600919", "name": "江苏银行", "price": 13.66, "changePct": 0.74,
     "consensus": 75.2, "score": 75.2, "grade": "A", "label": "强烈推荐",
-    "qualified": 6, "qualifiedNames": ["低波动价值", "海龟通道突破"],
-    "bestStrategy": { "key": "low_vol_value", "name": "低波动价值", "score": 83.1 },
-    "strategyHits": [{ "key": "low_vol_value", "name": "低波动价值", "score": 83.1, "passed": true }],
-    "reasons": ["20日动量 +8.2%", "低估值 + 低波动"]
+    "qualified": 6, "qualifiedNames": ["量价共振", "20 日放量突破"],
+    "bestStrategy": { "key": "volume_price", "name": "量价共振", "score": 83.1 },
+    "strategyHits": [{ "key": "volume_price", "name": "量价共振", "score": 83.1, "passed": true }],
+    "reasons": ["OBV 与价格同向向上", "放量上涨"]
   }],
-  "strategyStats": [{ "key": "low_vol_value", "name": "低波动价值", "avgScore": 57.5, "passCount": 12, "passRate": 20 }],
+  "strategyStats": [{ "key": "volume_price", "name": "量价共振", "avgScore": 57.5, "passCount": 12, "passRate": 20 }],
   "meta": {
     "strategyCount": 8, "candidates": 60, "scanned": 600, "filtered": 402,
     "evaluated": 90, "market": { "regime": "震荡", "breadth": 46 },
+    "filters": { "minPrice": 5, "maxPrice": 80, "minMarketCap": 100, "maxMarketCap": 3000 },
     "asOf": "2026-11-20T15:01:00.000Z", "elapsedMs": 1380
   }
 }
@@ -218,7 +222,7 @@
 
 ## GET /api/stock/advice
 
-个股多策略综合建议。对同一只股票运行 7 个回测策略，用「胜率 × 盈利质量 × 盈亏比」归一化得到权重，再把各策略当前持仓/空仓信号加权为「买入 / 持有 / 卖出」。
+个股多策略综合建议。对同一只股票运行统一 8 个回测策略，用「胜率 × 盈利质量 × 盈亏比」归一化得到权重，再把各策略当前持仓/空仓信号加权为「买入 / 持有 / 卖出」。
 
 | 参数 | 默认 | 说明 |
 | --- | --- | --- |
@@ -232,14 +236,14 @@
   "action": "hold", "actionLabel": "持有", "tone": "warn",
   "score": 49.7, "confidence": 77,
   "consensus": {
-    "total": 7, "longCount": 4, "flatCount": 3,
+    "total": 8, "longCount": 4, "flatCount": 4,
     "bullWeightPct": 36.6, "bearWeightPct": 63.4, "label": "策略分歧，等待确认"
   },
   "topStrategy": { "key": "bollinger", "name": "布林带回归", "weight": 30.5 },
-  "reasons": ["4/7 个策略当前持仓，多头权重 36.6%", "布林带回归：胜率 66.7% · 区间收益 51.2% · 当前空仓"],
-  "warnings": ["策略信号分歧：4/7 个策略当前持仓"],
+  "reasons": ["4/8 个策略当前持仓，多头权重 36.6%", "布林带回归：胜率 66.7% · 区间收益 51.2% · 当前空仓"],
+  "warnings": ["策略信号分歧：4/8 个策略当前持仓"],
   "strategies": [{
-    "key": "ma_cross", "name": "双均线金叉", "weight": 7.5,
+    "key": "ma_cross", "name": "双均线趋势", "weight": 7.5,
     "signal": "long", "signalLabel": "持仓", "fresh": false,
     "metrics": {
       "winRate": 60, "totalReturn": 38.2, "annualized": 21.4,
@@ -255,7 +259,7 @@
 
 ## GET /api/intraday
 
-当日分时数据与分钟级多策略买卖点。数据优先取腾讯当日分时，失败时回退新浪 5 分钟线。
+当日分时数据与统一 8 策略的分钟级买卖点。数据优先取腾讯当日分时，失败时回退新浪 5 分钟线。后端分钟数据缓存 30 秒，前端每 30 秒静默轮询；这是分钟快照自动更新，不是逐笔实时推送，公开行情也可能延迟。
 
 | 参数 | 说明 |
 | --- | --- |
@@ -265,23 +269,31 @@
 {
   "ok": true,
   "code": "600519", "name": "贵州茅台", "date": "2026-11-20",
-  "source": "腾讯财经分时", "prevClose": 1460.21, "price": 1485.75, "changePct": 1.75,
+  "dataTime": "2026-11-20 15:00", "source": "腾讯财经分时",
+  "prevClose": 1460.21, "price": 1485.75, "changePct": 1.75,
   "high": 1488, "low": 1426, "vwap": 1457.15,
   "bars": [{ "time": "09:30", "price": 1450.89, "avg": 1450.89, "volume": 23500 }],
   "markers": [{
     "index": 211, "time": "14:21", "price": 1445.5, "side": "buy", "label": "买点",
-    "score": 2.7, "count": 2, "reasons": ["分钟均线金叉", "放量突破"]
+    "score": 2.7, "count": 2, "strategies": ["ma_cross", "volume_price"],
+    "reasons": ["双均线趋势·分钟均线金叉", "量价共振·OBV 转强且放量"]
   }],
+  "strategyUniverse": [{ "key": "volume_price", "name": "量价共振" }],
   "summary": {
-    "stance": "偏多", "score": 2.1, "buyCount": 4, "sellCount": 3,
-    "aboveVwap": true, "rsi": 63.2, "ma5": 1481.4, "ma20": 1470.8, "volRatio": 1.2,
-    "lastMarker": { "time": "14:45", "side": "buy", "price": 1468.88 }
+    "stance": "偏多", "score": 2.1, "buyCount": 2, "sellCount": 2,
+    "aboveVwap": true, "rsi": 63.2, "ma5": 1481.4, "ma20": 1470.8,
+    "volRatio": 1.2, "obvStrength": 0.18, "blockedBuy": 3, "blockedSell": 5,
+    "lastMarker": { "time": "14:36", "side": "sell", "price": 1456.03 }
+  },
+  "live": {
+    "mode": "分钟快照轮询", "autoRefreshSeconds": 30, "realtime": false,
+    "note": "非逐笔推送；页面每 30 秒重新拉取最新分钟快照，行情可能存在延迟。"
   },
   "updatedAt": "2026-11-20T15:05:00.000Z"
 }
 ```
 
-买卖点由 VWAP 突破、分钟均线、MACD、RSI、量价突破五类规则加权投票生成，综合强度低于 1.5 或方向冲突时不输出。
+至少两个策略同向投票，方向强度须不低于 2.2 且达到反向强度的 1.2 倍；买卖点交替并至少间隔 10 分钟。趋势和突破买点需要量比或 OBV 确认；高位急涨、严重偏离 VWAP 时拦截买点，当日低点、低位急跌或 RSI 过低时拦截卖点。历史标记基于已获取的整段分钟快照计算，可能因数据源修正而变化，不代表可成交或盈利保证。
 
 ## POST /api/screen
 
@@ -291,6 +303,7 @@
   "filters": {
     "scanCount": 600, "minPrice": 2, "maxPrice": 800,
     "minFloatCap": 20, "maxFloatCap": 8000,
+    "minMarketCap": 0, "maxMarketCap": 100000,
     "minTurnover": 0.5, "maxTurnover": 30,
     "peMax": 150, "boards": ["main", "gem", "star"],
     "candidates": 70, "limit": 24, "excludeST": true
@@ -318,7 +331,7 @@
 | 参数 | 说明 |
 | --- | --- |
 | `code` | 股票代码 |
-| `strategy` | `ma_cross` / `momentum` / `rsi_reversion` / `breakout` / `macd` / `bollinger` / `kdj` |
+| `strategy` | `ma_cross` / `macd` / `momentum` / `breakout` / `rsi_reversion` / `bollinger` / `kdj` / `volume_price` |
 | `days` | 回测区间交易日数（120–800） |
 | `fast` `slow` `signal` `period` `mult` `low` `high` `entry` `exit` | 策略参数 |
 

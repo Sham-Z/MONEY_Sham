@@ -122,13 +122,31 @@
       <div class="picks-hero-text">
         <span class="eyebrow">MULTI-STRATEGY PICKS</span>
         <h2>实时多策略综合荐股榜</h2>
-        <p>同一候选池同时运行 Alpha158、海龟通道、双均线、动量、RSI 反转、神奇公式、CANSLIM、低波动价值 8 大策略，按平均得分与命中策略数聚合排序。</p>
+        <p>同一候选池同时运行双均线、MACD、动量、放量突破、RSI、布林带、KDJ、量价共振 8 个技术策略，统一纳入成交量与 OBV，按平均得分与命中策略数聚合排序。</p>
       </div>
       <div class="picks-hero-actions">
         <span class="hint" id="picksUpdated">尚未加载</span>
         <button class="btn primary" id="refreshPicks">刷新榜单</button>
       </div>
     </div>
+
+    <form class="card picks-filter" id="picksFilters">
+      <div class="card-head">
+        <h3>个性化筛选</h3>
+        <span class="hint">股价单位：元；总市值单位：亿元</span>
+      </div>
+      <div class="picks-filter-grid">
+        <label class="field"><span>最低股价</span><input type="number" min="0" step="any" required data-picks-filter="minPrice" /></label>
+        <label class="field"><span>最高股价</span><input type="number" min="0" step="any" required data-picks-filter="maxPrice" /></label>
+        <label class="field"><span>最低总市值</span><input type="number" min="0" step="any" required data-picks-filter="minMarketCap" /></label>
+        <label class="field"><span>最高总市值</span><input type="number" min="0" step="any" required data-picks-filter="maxMarketCap" /></label>
+        <div class="picks-filter-actions">
+          <button class="btn primary" id="applyPicksFilters" type="submit">应用筛选</button>
+          <button class="btn ghost" id="resetPicksFilters" type="button">恢复默认</button>
+        </div>
+      </div>
+      <p class="fineprint" id="picksFilterSummary">筛选条件同时应用于首页荐股榜与完整榜单。</p>
+    </form>
 
     <div class="picks-meta" id="picksMeta"></div>
     <div class="strategy-score-grid" id="picksStrategyStats"></div>
@@ -267,7 +285,7 @@
         <h3>多策略综合建议</h3>
         <span class="hint" id="adviceAsOf">按回测胜率 × 盈利质量分配权重</span>
       </div>
-      <div id="adviceBody"><div class="empty">正在运行 7 个回测策略并计算权重…</div></div>
+      <div id="adviceBody"><div class="empty">正在运行 8 个回测策略并计算权重…</div></div>
     </div>
 
     <div class="stock-main" hidden id="stockMain">
@@ -422,18 +440,18 @@
 
       <article class="card doc">
         <h2>策略库（参考 GitHub 开源项目）</h2>
-        <p>选股页内置 8 个可选策略，均可在策略条中一键切换并自动运行：</p>
+        <p>荐股、个股综合建议、分时买卖点和策略回测统一使用以下 8 个技术策略；分钟图会按短周期适配同一套信号逻辑：</p>
         <ul>
-          <li><strong>Alpha158 多因子</strong> — 参考 microsoft/qlib 的 Alpha158 量价因子体系；</li>
-          <li><strong>海龟通道突破</strong> — 20/60 日通道 + ATR 波动过滤（海龟交易法则、vnpy 常用）；</li>
-          <li><strong>双均线趋势</strong> — MA5/MA20 金叉 + MA60 中期确认（backtrader 社区经典）；</li>
-          <li><strong>动量轮动</strong> — 20/60 日收益与区间位置；</li>
-          <li><strong>RSI 超跌反转</strong> — RSI(14) 超卖企稳；</li>
-          <li><strong>神奇公式</strong> — ROE 与 PE/PB 的好公司好价格组合；</li>
-          <li><strong>CANSLIM 成长动量</strong> — 盈利、营收增长叠加相对强度与量能；</li>
-          <li><strong>低波动价值</strong> — 低波动 + 低估值 + MA60 上方。</li>
+          <li><strong>双均线趋势</strong> — MA5/MA20 趋势交叉，结合量能、OBV 与超买过滤；</li>
+          <li><strong>MACD 趋势</strong> — DIF/DEA 交叉与柱体变化，结合趋势和量能确认；</li>
+          <li><strong>动量轮动</strong> — 20/60 日收益、区间位置与量价配合，惩罚涨幅透支；</li>
+          <li><strong>20 日放量突破</strong> — 20/60 日价格通道、ATR 与放量/OBV 确认；</li>
+          <li><strong>RSI 超跌反转</strong> — RSI(14) 超卖企稳，避免把持续下跌直接当作反转；</li>
+          <li><strong>布林带回归</strong> — 布林带位置、带宽与回归信号；</li>
+          <li><strong>KDJ 超跌</strong> — K/D 低位金叉与高位死叉，结合区间位置；</li>
+          <li><strong>量价共振</strong> — 量比、OBV、价格趋势与成交额共同确认。</li>
         </ul>
-        <p>每个结果都会给出得分、等级与「入选理由」，顶部卡片自动展示当日最符合该策略的股票。</p>
+        <p>策略思路参考 Backtrader、vn.py、Qlib、Freqtrade 等开源项目的指标与回测实现，并针对本站数据结构调整；不是对原项目策略的逐行复刻，也不代表收益保证。</p>
       </article>
 
       <article class="card doc">
@@ -456,19 +474,19 @@
 
       <article class="card doc">
         <h2>多策略综合建议与分时买卖点</h2>
-        <p>个股分析页会把同一只股票同时跑 7 个回测策略（双均线、动量、RSI、突破、MACD、布林带、KDJ），并计算每个策略的胜率、区间收益、盈亏比与最大回撤。</p>
+        <p>个股分析页会把同一只股票同时跑与荐股榜一致的 8 个回测策略，并计算每个策略的胜率、区间收益、盈亏比与最大回撤。</p>
         <ul>
           <li><strong>权重</strong> = 胜率 × 盈利质量 × 盈亏比，经归一化并与等权基准混合，避免单一策略过度主导；</li>
           <li><strong>综合建议</strong> = 各策略当前持仓 / 空仓信号按权重加权，输出「买入 / 持有 / 卖出」、置信度与策略分歧提示；</li>
-          <li><strong>分时买卖点</strong> = 在当日分钟序列上同时运行 VWAP 突破、分钟均线、MACD、RSI 与量价突破，多规则投票生成买点 / 卖点。</li>
+          <li><strong>分时买卖点</strong> = 同一 8 策略在分钟序列上投票，至少两个策略同向；高位追买与低位杀跌会被拦截或提高确认门槛。</li>
         </ul>
-        <p>图表支持「分时 / 日K / 周K」切换，分时图直接标注买卖点、VWAP 均价线与成交量。</p>
+        <p>图表支持「分时 / 日K / 周K」切换。分时页每 30 秒自动拉取最新分钟快照并重算标记，不是逐笔实时推送，行情可能延迟，信号也不保证成交或未来收益。</p>
       </article>
 
       <article class="card doc">
         <h2>实时荐股榜单</h2>
-        <p>「荐股榜单」栏目对同一候选池同时运行 8 个选股策略，按平均得分与命中策略数聚合为综合评分，输出 Top 20，并展示每个策略在当前市场下的平均得分与命中率。</p>
-        <p>榜单每 3 分钟缓存刷新一次；点击任意股票即可进入个股分析，查看多策略综合建议与分时买卖点，形成「榜单 → 个股 → 买卖点」的完整动线。</p>
+        <p>「荐股榜单」对同一候选池同时运行 8 个技术策略，按平均得分与命中策略数聚合为综合评分，输出 Top 20。可自定义股价（元）与总市值（亿元）区间，首页前 5 名沿用相同筛选。</p>
+        <p>榜单每 3 分钟缓存刷新一次；点击任意股票即可进入个股分析，查看相同策略体系下的综合建议与分时买卖点，形成可交叉验证的「榜单 → 个股 → 买卖点 → 回测」动线。</p>
       </article>
 
       <article class="card doc">
@@ -487,6 +505,6 @@
 
 <div class="toast" id="toast" hidden></div>
 
-<script type="module" src="/js/app.js?v=1.0.4"></script>
+<script type="module" src="/js/app.js?v=1.0.5"></script>
 </body>
 </html>

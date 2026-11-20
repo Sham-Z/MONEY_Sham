@@ -75,15 +75,21 @@ const state = {
   quote: { page: 1, size: 50, sort: 'changepercent', asc: 0, search: '' },
   screenMeta: null,
   screen: null,
-  screenStrategy: 'alpha158',
+  screenStrategy: 'volume_price',
   screenParams: {},
   screenLoading: false,
   stock: {
     code: '', name: '', period: 'day', series: null, detail: null,
     strategy: 'ma_cross', btDays: 500, layout: null,
     intraday: null, advice: null, adviceLoading: false, intradayLayout: null,
+    intradayTimer: null, intradayLoadingCode: '',
   },
-  picks: { data: null, loading: false, timer: null },
+  picks: {
+    data: null,
+    loading: false,
+    timer: null,
+    filters: { minPrice: 2, maxPrice: 800, minMarketCap: 0, maxMarketCap: 100000 },
+  },
   trade: { account: null, prices: {}, timer: null },
   portfolio: { holdings: [], diagnosis: null, timer: null, loading: false },
 };
@@ -253,7 +259,7 @@ async function initScreenControls() {
   }
   state.screenMeta = meta;
   if (!meta.strategies?.some((s) => s.key === state.screenStrategy)) {
-    state.screenStrategy = meta.defaultStrategy || 'alpha158';
+    state.screenStrategy = meta.defaultStrategy || 'volume_price';
   }
 
   $('#weightSliders').innerHTML = meta.factors
@@ -476,15 +482,26 @@ function renderScreenResult(data) {
 
 /* ------------------------------ 荐股榜单 ------------------------------ */
 
+const DEFAULT_PICKS_FILTERS = Object.freeze({ minPrice: 2, maxPrice: 800, minMarketCap: 0, maxMarketCap: 100000 });
+
+function syncPicksFilterInputs() {
+  $$('[data-picks-filter]').forEach((input) => {
+    input.value = state.picks.filters[input.dataset.picksFilter];
+  });
+}
+
 async function loadPicks(force = false) {
   if (state.picks.loading) return;
   state.picks.loading = true;
+  $('#applyPicksFilters').disabled = true;
   if (!state.picks.data) {
     $('#marketPicksGrid').innerHTML = '<div class="empty">正在计算多策略综合评分…</div>';
     $('#picksTable tbody').innerHTML = '<tr><td colspan="9" class="empty">正在扫描候选池并运行 8 个策略…</td></tr>';
   }
+  const query = new URLSearchParams({ limit: '20', ...state.picks.filters });
+  if (force) query.set('refresh', '1');
   try {
-    const data = await apiGet(`/api/picks?limit=20${force ? '&refresh=1' : ''}`);
+    const data = await apiGet(`/api/picks?${query}`);
     state.picks.data = data;
     renderMarketPicks(data);
     renderPicks(data);
@@ -496,6 +513,7 @@ async function loadPicks(force = false) {
     if (force) toast(`榜单刷新失败：${err.message}`, true);
   } finally {
     state.picks.loading = false;
+    $('#applyPicksFilters').disabled = false;
   }
 }
 
@@ -542,6 +560,8 @@ function renderPicks(data) {
     <span>参与策略<b>${m.strategyCount ?? 8}</b></span>
     <span>耗时<b>${m.elapsedMs ?? 0} ms</b></span>`;
   $('#picksNote').textContent = data.disclaimer || '';
+  const f = m.filters || state.picks.filters;
+  $('#picksFilterSummary').textContent = `当前：股价 ${f.minPrice}–${f.maxPrice} 元，总市值 ${f.minMarketCap}–${f.maxMarketCap} 亿元；同时应用于首页荐股榜。`;
 
   $('#picksStrategyStats').innerHTML = (data.strategyStats || [])
     .map(
@@ -584,6 +604,19 @@ function setStockRoute(code) {
   location.hash = `#/stock?code=${code}`;
 }
 
+function stopIntradayAutoRefresh() {
+  clearInterval(state.stock.intradayTimer);
+  state.stock.intradayTimer = null;
+}
+
+function syncIntradayAutoRefresh() {
+  stopIntradayAutoRefresh();
+  if (state.stock.period !== 'min' || !state.stock.code || !location.hash.startsWith('#/stock')) return;
+  state.stock.intradayTimer = setInterval(() => {
+    if (!document.hidden) loadIntraday(state.stock.code, { silent: true });
+  }, 30_000);
+}
+
 async function loadStock(code, period = state.stock.period) {
   if (!/^\d{6}$/.test(code)) {
     toast('请输入 6 位股票代码', true);
@@ -592,10 +625,11 @@ async function loadStock(code, period = state.stock.period) {
   const codeChanged = state.stock.code !== code;
   state.stock.code = code;
   state.stock.period = period;
+  syncIntradayAutoRefresh();
   if (codeChanged) {
     state.stock.advice = null;
     state.stock.intraday = null;
-    $('#adviceBody').innerHTML = '<div class="empty">正在运行 7 个回测策略并计算权重…</div>';
+    $('#adviceBody').innerHTML = '<div class="empty">正在运行 8 个回测策略并计算权重…</div>';
     $('#adviceCard').hidden = false;
   }
   $('#stockMain').hidden = false;
@@ -722,21 +756,32 @@ function renderAdvice(d) {
     <p class="fineprint">${esc(d.disclaimer)}</p>`;
 }
 
-async function loadIntraday(code) {
+async function loadIntraday(code, { silent = false } = {}) {
+  if (state.stock.intradayLoadingCode === code) return;
+  state.stock.intradayLoadingCode = code;
   const empty = $('#klineEmpty');
-  empty.style.display = 'grid';
-  empty.textContent = '加载分时数据…';
+  if (!silent || !state.stock.intraday) {
+    empty.style.display = 'grid';
+    empty.textContent = '加载分时数据…';
+  }
   try {
     const data = await apiGet(`/api/intraday?code=${code}`);
-    if (state.stock.code !== code) return;
+    if (state.stock.code !== code || state.stock.period !== 'min') return;
     state.stock.intraday = data;
-    $('#klineEmpty').style.display = 'none';
+    empty.style.display = 'none';
     state.stock.intradayLayout = drawIntraday($('#klineCanvas'), data);
     renderIntradaySummary(data);
   } catch (err) {
-    empty.style.display = 'grid';
-    empty.textContent = `分时数据加载失败：${err.message}`;
-    toast(`分时数据加载失败：${err.message}`, true);
+    if (silent && state.stock.intraday && state.stock.code === code) {
+      const note = $('#intradayLiveNote');
+      if (note) note.textContent = `本次自动刷新失败，保留上一快照：${err.message}`;
+    } else {
+      empty.style.display = 'grid';
+      empty.textContent = `分时数据加载失败：${err.message}`;
+      toast(`分时数据加载失败：${err.message}`, true);
+    }
+  } finally {
+    if (state.stock.intradayLoadingCode === code) state.stock.intradayLoadingCode = '';
   }
 }
 
@@ -760,9 +805,13 @@ function renderIntradaySummary(d) {
       <span>VWAP <b>${fmt.price(d.vwap)}</b></span>
       <span>高 / 低 <b>${fmt.price(d.high)} / ${fmt.price(d.low)}</b></span>
       <span>买卖点 <b><i class="dot-buy"></i>${s.buyCount || 0} / <i class="dot-sell"></i>${s.sellCount || 0}</b></span>
+      <span>量比 / OBV <b>${fmt.price(s.volRatio)} / ${fmt.signed(s.obvStrength)}</b></span>
+      <span>高位禁买 / 低位禁卖 <b>${s.blockedBuy || 0} / ${s.blockedSell || 0}</b></span>
+      <span>数据时间 <b>${esc(d.dataTime || '--')}</b></span>
       <span>数据源 <b>${esc(d.source || '--')}</b></span>
     </div>
-    <div class="marker-list">${markers || '<span class="hint">当日暂未触发多策略共识买卖点</span>'}</div>`;
+    <div class="marker-list">${markers || '<span class="hint">当日暂未触发多策略共识买卖点</span>'}</div>
+    <p class="fineprint intraday-live" id="intradayLiveNote">${esc(d.live?.note || '分钟快照每 30 秒刷新，非逐笔实时信号。')}</p>`;
 }
 
 
@@ -1389,6 +1438,8 @@ function setView(view) {
     docs: '策略说明',
   };
   if (titles[view]) document.title = `${titles[view]} · MONEY 量化终端`;
+  if (view === 'stock') syncIntradayAutoRefresh();
+  else stopIntradayAutoRefresh();
   if (view === 'picks' || view === 'market') {
     if (!state.picks.data) loadPicks();
     clearInterval(state.picks.timer);
@@ -1432,6 +1483,7 @@ function route() {
     const code = params.get('code');
     if (code && code !== state.stock.code) loadStock(code);
     else if (!code) {
+      stopIntradayAutoRefresh();
       $('#stockMain').hidden = true;
       $('#backtestCard').hidden = true;
       $('#adviceCard').hidden = true;
@@ -1490,6 +1542,24 @@ function bindEvents() {
 
   // 荐股榜单
   $('#refreshPicks').addEventListener('click', () => loadPicks(true));
+  $('#picksFilters').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const next = {};
+    $$('[data-picks-filter]').forEach((input) => { next[input.dataset.picksFilter] = Number(input.value); });
+    if (next.minPrice > next.maxPrice || next.minMarketCap > next.maxMarketCap) {
+      toast('筛选下限不能大于上限', true);
+      return;
+    }
+    state.picks.filters = next;
+    state.picks.data = null;
+    loadPicks(true);
+  });
+  $('#resetPicksFilters').addEventListener('click', () => {
+    state.picks.filters = { ...DEFAULT_PICKS_FILTERS };
+    state.picks.data = null;
+    syncPicksFilterInputs();
+    loadPicks(true);
+  });
 
   // 选股
   $('#runScreen').addEventListener('click', runScreen);
@@ -1749,6 +1819,7 @@ async function boot() {
   renderPfEditor();
   renderPfDiagnosis();
   bindEvents();
+  syncPicksFilterInputs();
   $('#stockQuick').innerHTML = [
     ['600519', '贵州茅台'], ['300750', '宁德时代'],
     ['000001', '平安银行'], ['601318', '中国平安'], ['002594', '比亚迪'],
