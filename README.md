@@ -8,7 +8,7 @@
 | --- | --- |
 | 行情总览 | 上证 / 深证 / 创业板 / 沪深300 指数卡与近 60 日走势，涨幅榜、跌幅榜、成交额榜、换手率榜，全市场行情排序分页，并置顶展示实时多策略荐股前 5 名 |
 | 荐股榜单 | 同一候选池同时运行 9 个统一技术策略，按平均得分与命中策略数聚合为综合评分，支持股价（元）与总市值（亿元）区间筛选，输出 Top 20、最佳策略与策略命中率；行情每 4 秒更新，完整排名每 60 秒重算 |
-| 策略选股 | 内置双均线、MACD、动量、20 日放量突破、RSI、布林带、KDJ、量价共振、缠论结构 9 个策略，可一键切换并自动扫描全市场，同时保留可调权重的自定义多因子模式 |
+| 策略选股 | 内置双均线、MACD、动量、60 日放量突破、RSI、布林带、KDJ、量价共振、缠论结构 9 个策略，可一键切换并自动扫描全市场，同时保留可调权重的自定义多因子模式 |
 | 策略荐股 | 按所选策略对全市场流动性股票实时评分，自动输出当日荐股卡片（得分、等级、入选理由），可一键加入持仓 |
 | 持仓信息 | 手动添加 / 编辑持仓股票、股数与成本，平台实时诊断并给出买入、加仓、持有、减仓、清仓、观望信号，附置信度、支撑压力、止损目标与组合风险提示 |
 | 个股分析 | 多策略综合建议（9 策略加权 + 板块情绪有界修正）、分时 / 日K / 周K 图、5 分钟缠论第 9 票、日 K 缠论笔 / 中枢 / 确认买卖点与文字解读、技术指标与财报摘要 |
@@ -79,7 +79,7 @@ cd dist && PORT=8000 sh run.sh
 | 双均线趋势 | [mementum/backtrader](https://github.com/mementum/backtrader) | MA5/MA20 金叉 + MA60 中期确认 + 量能/OBV |
 | MACD 趋势 | [mementum/backtrader](https://github.com/mementum/backtrader) | DIF/DEA 金叉、红柱方向 + OBV 过滤 |
 | 动量轮动 | [microsoft/qlib](https://github.com/microsoft/qlib) | 20/60 日收益、区间位置与量能，超买和涨幅透支降分 |
-| 20 日放量突破 | [vnpy/vnpy](https://github.com/vnpy/vnpy) | 20/60 日通道突破 + 成交量与 OBV 确认 |
+| 60 日放量突破 | [vnpy/vnpy](https://github.com/vnpy/vnpy) | 60 日通道突破 + 成交量与 OBV 确认 |
 | RSI 超跌反转 | [mementum/backtrader](https://github.com/mementum/backtrader) | RSI(14) 超卖企稳，结合缩量回踩与 OBV |
 | 布林带回归 | [mementum/backtrader](https://github.com/mementum/backtrader) | 下轨企稳、中轨兑现，接近上轨不追高 |
 | KDJ 超跌 | [freqtrade/freqtrade](https://github.com/freqtrade/freqtrade) | 低位金叉与高位死叉，结合量能确认 |

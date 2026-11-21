@@ -335,3 +335,14 @@ test('compositeFromBars 严格执行 60–119 日回测并拒绝非法天数', (
     assert.throws(() => quant.compositeFromBars(bars, bars, { days }), /回测交易日需为 60–800 的整数/);
   }
 });
+
+test('60 日放量突破默认参数与策略库文案保持一致', () => {
+  const meta = quant.STRATEGIES.find((strategy) => strategy.key === 'breakout');
+  assert.equal(meta.name, '60 日放量突破');
+  assert.deepEqual(meta.params, { entry: 60, exit: 20 });
+
+  const closes = bars.map((bar) => bar.close);
+  const signal = quant.buildSignals('breakout', meta.params, closes, bars);
+  assert.equal(signal.length, bars.length);
+  assert.ok(signal.every((value) => value === 0 || value === 1));
+});

@@ -205,7 +205,7 @@
   "items": [{
     "code": "600919", "name": "江苏银行", "price": 13.66, "changePct": 0.74,
     "consensus": 75.2, "score": 75.2, "grade": "A", "label": "强烈推荐",
-    "qualified": 6, "qualifiedNames": ["量价共振", "20 日放量突破"],
+    "qualified": 6, "qualifiedNames": ["量价共振", "60 日放量突破"],
     "bestStrategy": { "key": "volume_price", "name": "量价共振", "score": 83.1 },
     "strategyHits": [{ "key": "volume_price", "name": "量价共振", "score": 83.1, "passed": true }],
     "reasons": ["OBV 与价格同向向上", "放量上涨"]

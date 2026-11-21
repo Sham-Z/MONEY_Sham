@@ -64,7 +64,7 @@ score = Σ(weight_i × factor_i) / Σ(weight_i)
 | `ma_cross` | 双均线趋势 | mementum/backtrader | MA5/MA20 近期金叉、MA20>MA60、趋势结构、MACD、量比与 OBV；RSI 过高降分 | 58 |
 | `macd` | MACD 趋势 | mementum/backtrader | DIF/DEA 红柱及放大、MA20/MA60 趋势、量比与 OBV | 56 |
 | `momentum` | 动量轮动 | microsoft/qlib | 20/60 日收益、趋势、区间位置、量比与 OBV；RSI 过高、5 日涨幅透支、放量滞涨降分 | 58 |
-| `breakout` | 20 日放量突破 | vnpy/vnpy · 海龟交易法则 | 20/60 日通道、趋势、动量、量比与 OBV；高位突破和短期涨幅过大降分 | 62 |
+| `breakout` | 60 日放量突破 | vnpy/vnpy · 海龟交易法则 | 60 日通道、趋势、动量、量比与 OBV；高位突破和短期涨幅过大降分 | 62 |
 | `rsi_reversion` | RSI 超跌反转 | mementum/backtrader | RSI 接近超卖线并回升、区间下沿、缩量回踩或 OBV 止跌；弱势资金流降分 | 56 |
 | `bollinger` | 布林带回归 | mementum/backtrader | 价格相对中轨位置、企稳回升、MA60、量比与 OBV；接近上轨降分 | 56 |
 | `kdj` | KDJ 超跌 | freqtrade/freqtrade 指标组合 | K 值低位、K/D 金叉、RSI 回升与 OBV；K 值高位降分 | 56 |
@@ -189,7 +189,7 @@ weight_i  = 0.65 × quality_i / Σquality + 0.35 × (1 / N)
 | `ma_cross` | 双均线趋势 | MA(fast) 上穿 MA(slow) 且量比/OBV 确认买入，下穿卖出 |
 | `macd` | MACD 趋势 | DIF 上穿 DEA 且量比/OBV 确认买入，下穿卖出 |
 | `momentum` | 动量轮动 | 收盘 > MA(period) 且 period 日收益 > 0，入场需量比/OBV 确认 |
-| `breakout` | 20 日放量突破 | 突破前 entry 日最高价且量比 ≥1.05、OBV 向上买入，跌破前 exit 日最低价卖出 |
+| `breakout` | 60 日放量突破 | 突破前 entry(60) 日最高价且量比 ≥1.05、OBV 向上买入，跌破前 exit(20) 日最低价卖出 |
 | `rsi_reversion` | RSI 超跌反转 | RSI(14) < low 买入，> high 卖出 |
 | `bollinger` | 布林带回归 | 收盘跌破下轨买入，回到中轨上方卖出 |
 | `kdj` | KDJ 超跌 | K 值低位上穿 D 值买入，高位下穿卖出 |
