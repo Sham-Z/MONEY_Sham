@@ -114,8 +114,8 @@
   "candidates": 100,
   "limit": 12,
   "filters": {
-    "minPrice": 2, "maxPrice": 800, "minFloatCap": 20, "maxFloatCap": 8000,
-    "minMarketCap": 0, "maxMarketCap": 100000,
+    "minPrice": 2, "maxPrice": 50, "minFloatCap": 20, "maxFloatCap": 200,
+    "minMarketCap": 0, "maxMarketCap": 200,
     "minTurnover": 0.5, "maxTurnover": 30, "peMax": 150,
     "boards": ["main", "gem", "star"], "excludeST": true
   }
@@ -195,8 +195,8 @@
 | `limit` | 20 | 返回条数（5–40） |
 | `scanCount` | 600 | 快照扫描数量（200–1200） |
 | `candidates` | 90 | 技术评估候选数（30–120） |
-| `minPrice` / `maxPrice` | 2 / 800 | 股价区间，单位为元 |
-| `minMarketCap` / `maxMarketCap` | 0 / 100000 | 总市值区间，单位为亿元 |
+| `minPrice` / `maxPrice` | 2 / 50 | 股价区间，单位为元 |
+| `minMarketCap` / `maxMarketCap` | 0 / 200 | 总市值区间，单位为亿元 |
 | `refresh` | - | `1` 时强制重新扫描 |
 
 ```json
@@ -261,7 +261,7 @@
 }
 ```
 
-`action` 取值：`buy` 买入、`hold` 持有、`sell` 卖出。权重经等权混合平滑，避免单一策略过度主导。
+`action` 取值：`buy` 买入、`hold` 持有、`sell` 卖出。权重按回测质量前 3 策略等权分配，其余策略权重为 0；RSI14 > 75 或 10 日涨幅 > 15% 时触发过热锁定并强制 `sell`，RSI14 < 50 且 10 日涨幅 < 5% 后解除，`overheat` 字段返回当前锁定状态、RSI 与 10 日涨幅。
 
 ## GET /api/intraday
 
@@ -312,9 +312,9 @@
 {
   "weights": { "momentum": 22, "trend": 20, "volume": 15, "volatility": 13, "valuation": 15, "growth": 15 },
   "filters": {
-    "scanCount": 600, "minPrice": 2, "maxPrice": 800,
-    "minFloatCap": 20, "maxFloatCap": 8000,
-    "minMarketCap": 0, "maxMarketCap": 100000,
+    "scanCount": 600, "minPrice": 2, "maxPrice": 50,
+    "minFloatCap": 20, "maxFloatCap": 200,
+    "minMarketCap": 0, "maxMarketCap": 200,
     "minTurnover": 0.5, "maxTurnover": 30,
     "peMax": 150, "boards": ["main", "gem", "star"],
     "candidates": 70, "limit": 24, "excludeST": true
@@ -339,7 +339,7 @@
 
 ## GET /api/backtest
 
-只运行“多策略综合建议”的 walk-forward 组合回测，不再提供单策略或指标参数选择。每 20 个交易日调权，每次仅使用调权日前一交易日及以前最多 400 日数据，按 65% 回测质量 + 35% 等权确定九策略权重。综合分叠加与实时建议一致的板块有界修正，≥64 买入、≤44 卖出，中间保持；收盘确认信号，下一交易日开盘成交。
+只运行“多策略综合建议”的 walk-forward 组合回测，不再提供单策略或指标参数选择。每 20 个交易日调权，每次仅使用调权日前一交易日及以前最多 400 日数据，按回测质量选取前 3 策略等权（各 1/3），其余策略权重为 0。综合分叠加与实时建议一致的板块有界修正，≥56 买入、≤44 卖出，中间保持；RSI14 > 75 或 10 日涨幅 > 15% 时触发过热止盈并锁定，RSI14 < 50 且 10 日涨幅 < 5% 后解除。收盘确认信号，下一交易日开盘成交。
 
 | 参数 | 默认 | 说明 |
 | --- | --- | --- |

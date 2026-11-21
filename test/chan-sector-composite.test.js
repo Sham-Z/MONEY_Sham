@@ -164,6 +164,9 @@ test('compositeFromBars 相同测试起点下保持 daily 历史及滚动训练�
     assert.equal(result.weights.length, 9);
     const weightSum = result.weights.reduce((sum, row) => sum + row.weight, 0);
     assert.ok(Math.abs(weightSum - 100) < 0.001);
+    assert.equal(result.weights.filter((row) => row.weight > 0).length, 3);
+    assert.equal(result.composite.buyThreshold, 56);
+    assert.equal(result.composite.sellThreshold, 44);
     assert.equal(result.walkForward.rebalanceEvery, 20);
     assert.equal(result.walkForward.rebalanceCount, Math.ceil(days / 20));
 
@@ -282,7 +285,7 @@ test('picks 同参数并发只扫描一次，缓存 key 完整且失败保留上
     limit: 20,
     scanCount: 200,
     candidates: 30,
-    filters: { minPrice: 2, maxPrice: 800, minMarketCap: 0, maxMarketCap: 100000 },
+    filters: { minPrice: 2, maxPrice: 800, minFloatCap: 20, maxFloatCap: 8000, minMarketCap: 0, maxMarketCap: 100000 },
   };
   try {
     datasource.sinaUniverse = async () => {

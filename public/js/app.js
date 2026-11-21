@@ -93,7 +93,7 @@ const state = {
     quotesUpdatedAt: null,
     rankStale: false,
     quoteStale: false,
-    filters: { minPrice: 2, maxPrice: 800, minMarketCap: 0, maxMarketCap: 100000 },
+    filters: { minPrice: 2, maxPrice: 50, minMarketCap: 0, maxMarketCap: 200 },
   },
   trade: { account: null, prices: {}, timer: null },
   portfolio: { holdings: [], diagnosis: null, timer: null, loading: false },
@@ -291,9 +291,9 @@ async function initScreenControls() {
     ['limit', '输出结果数', 'select', [12, 24, 40]],
     ['peMax', '市盈率上限', 'number', 150],
     ['minPrice', '最低价格', 'number', 2],
-    ['maxPrice', '最高价格', 'number', 800],
+    ['maxPrice', '最高价格', 'number', 50],
     ['minFloatCap', '流通市值下限(亿)', 'number', 20],
-    ['maxFloatCap', '流通市值上限(亿)', 'number', 8000],
+    ['maxFloatCap', '流通市值上限(亿)', 'number', 200],
     ['minTurnover', '换手率下限(%)', 'number', 0.5],
     ['maxTurnover', '换手率上限(%)', 'number', 30],
   ];
@@ -487,7 +487,7 @@ function renderScreenResult(data) {
 
 /* ------------------------------ 荐股榜单 ------------------------------ */
 
-const DEFAULT_PICKS_FILTERS = Object.freeze({ minPrice: 2, maxPrice: 800, minMarketCap: 0, maxMarketCap: 100000 });
+const DEFAULT_PICKS_FILTERS = Object.freeze({ minPrice: 2, maxPrice: 50, minMarketCap: 0, maxMarketCap: 200 });
 
 function syncPicksFilterInputs() {
   $$('[data-picks-filter]').forEach((input) => {
