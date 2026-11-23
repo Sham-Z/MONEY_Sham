@@ -21,7 +21,7 @@
 | --- | --- | --- |
 | 指数与个股实时快照 | 腾讯财经 | `qt.gtimg.cn/q=sh600519,...` |
 | 前复权日 / 周 / 月 K 线 | 腾讯财经 | `ifzq.gtimg.cn/appstock/app/fqkline/get` |
-| 当日分时数据 | 腾讯财经（失败回退新浪 5 分钟线） | `ifzq.gtimg.cn/appstock/app/minute/query` |
+| 当日分时数据 | 腾讯财经（失败回退新浪 1 分钟 / 5 分钟线） | `ifzq.gtimg.cn/appstock/app/minute/query` |
 | 全市场行情榜单与排序 | 新浪财经 | `Market_Center.getHQNodeData` |
 | 定期报告财务指标 | 东方财富数据中心 | `RPT_LICO_FN_CPD` |
 | 当前行业映射、板块快照与日 K | 东方财富 | `push2.eastmoney.com` / `push2his.eastmoney.com`；行业主链路失败回退 F10 `RPT_F10_CORETHEME_BOARDTYPE` |
