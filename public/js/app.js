@@ -816,7 +816,6 @@ function adviceTone(action) {
   if (action === 'sell') return 'sell';
   return 'hold';
 }
-
 function renderAdvice(d) {
   const tone = adviceTone(d.action);
   if (state.stock.detail) renderChanPanel(state.stock.detail);
@@ -830,7 +829,7 @@ function renderAdvice(d) {
         <td class="num">${s.metrics.profitFactor != null ? s.metrics.profitFactor.toFixed(2) : '--'}</td>
         <td class="num ${s.metrics.maxDrawdown < 0 ? 'down' : ''}">${fmt.pct(s.metrics.maxDrawdown)}</td>
         <td class="num">${s.metrics.closedTrades}</td>
-        <td><div class="weight-cell"><div class="weight-bar"><i style="width:${Math.min(100, s.weight)}%"></i></div><span>${s.weight.toFixed(1)}%</span></div></td>
+        <td><div class="weight-cell"><div class="weight-bar"><i style="width:${Math.min(100, s.hitScore ?? 0)}%"></i></div><span>${s.hitScore == null ? '--' : s.hitScore.toFixed(1)}${s.passed ? ' ✓' : ''}</span></div></td>
         <td><span class="sig ${s.signal === 'long' ? 'buy' : 'sell'}">${s.signal === 'long' ? '持仓' : '空仓'}${s.fresh ? ' · 新信号' : ''}</span></td>
       </tr>`,
     )
@@ -846,11 +845,11 @@ function renderAdvice(d) {
       </div>
       <div class="advice-gauge">
         <div class="gauge-num">${d.score.toFixed(1)}<small>/100</small></div>
-        <div class="gauge-label">加权综合评分</div>
+        <div class="gauge-label">九策略共识分</div>
         <div class="gauge-track"><i class="${tone}" style="width:${Math.min(100, Math.max(0, d.score))}%"></i></div>
         <div class="gauge-split">
-          <span class="up">多头权重 ${d.consensus.bullWeightPct}%</span>
-          <span class="down">空头权重 ${d.consensus.bearWeightPct}%</span>
+          <span class="up">命中 ${d.consensus.qualified}/${d.consensus.total}</span>
+          <span class="down">持仓 ${d.consensus.longCount}/${d.consensus.total}</span>
         </div>
       </div>
       <div class="advice-reasons">
@@ -863,15 +862,15 @@ function renderAdvice(d) {
     ${sector ? `<div class="sector-strip">
       <div><span>所属行业</span><b>${esc(sector.boardName || sector.industryName || '暂不可用')}</b></div>
       <div><span>短线板块情绪</span><b>${esc(sector.state || '中性')} · ${fmt.price(sector.score)} 分</b></div>
-      <div><span>综合分环境修正</span><b>${fmt.signed(sector.adjustment || 0, 1)} 分</b></div>
+      <div><span>板块情绪修正</span><b>${fmt.signed(sector.adjustment || 0, 1)} 分（仅提示）</b></div>
       <div><span>板块上涨 / 下跌家数</span><b>${sector.breadth ? `${sector.breadth.upCount ?? '--'} / ${sector.breadth.downCount ?? '--'}` : '仅实时展示，暂不可用'}</b></div>
-      <p>${esc((sector.descriptions || []).join('；') || '板块情绪只作环境修正，不独立触发买卖点。')}</p>
+      <p>${esc((sector.descriptions || []).join('；') || '板块情绪只作风险提示，不改变九策略共识评级。')}</p>
     </div>` : ''}
     <div class="table-wrap advice-table-wrap">
       <table class="data-table advice-table">
         <thead><tr>
           <th>策略</th><th class="num">区间收益</th><th class="num">胜率</th><th class="num">盈亏比</th>
-          <th class="num">最大回撤</th><th class="num">完成交易</th><th>权重</th><th>当前信号</th>
+          <th class="num">最大回撤</th><th class="num">完成交易</th><th>榜单得分</th><th>当前信号</th>
         </tr></thead>
         <tbody>${rows}</tbody>
       </table>

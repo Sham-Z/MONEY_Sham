@@ -220,6 +220,7 @@ test('stockIndustry 主链路失败时回退 F10 并按行业排名选择 NEW_BO
       industryName: '食品饮料',
       boardCode: 'BK0438',
       boardName: '食品饮料',
+      source: '东方财富 F10',
     });
     const f10Url = urls.find((url) => url.includes('reportName=RPT_F10_CORETHEME_BOARDTYPE'));
     assert.ok(f10Url);

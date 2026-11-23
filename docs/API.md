@@ -222,7 +222,7 @@
 
 ## GET /api/stock/advice
 
-个股多策略综合建议。对同一只股票运行统一 9 个回测策略，用「胜率 × 盈利质量 × 盈亏比」归一化得到权重，再把各策略当前持仓/空仓信号加权。板块情绪仅作 ±4 分环境修正，最终映射为「买入 / 持有 / 卖出」；行业映射优先使用 push2，失败时回退东财 F10。行业映射失败按中性 50 分、修正 0 降级；行业成功但板块行情失败时保留行业字段，仅情绪降级，不影响九策略原始信号。
+个股多策略综合建议。对同一只股票运行统一 9 个策略，并直接复用荐股榜的共识算法：`consensus = 平均分 × 0.72 + 命中占比 × 100 × 0.28`，映射为「买入 / 持有 / 观望 / 卖出」。各策略的回测胜率、区间收益仅作为参考列展示，与榜单的当日命中率不是同一口径。板块情绪与过热只作风险提示，不改变共识评级。行业映射优先使用同花顺行业板块，失败时回退东财 push2 / F10。
 
 | 参数 | 默认 | 说明 |
 | --- | --- | --- |
@@ -232,36 +232,44 @@
 ```json
 {
   "ok": true,
-  "code": "600519", "name": "贵州茅台",
+  "code": "300561", "name": "汇金科技",
   "action": "hold", "actionLabel": "持有", "tone": "warn",
-  "score": 51.7, "baseScore": 49.7, "sectorAdjustment": 2, "confidence": 77,
+  "score": 69.9, "label": "推荐", "grade": "B",
+  "sectorAdjustment": -3, "confidence": 76,
+  "overheat": { "rsi": 61.2, "ret10": 8.4, "overheated": false },
   "sector": {
-    "available": true, "boardCode": "BK0475", "boardName": "酿酒行业",
-    "score": 75, "state": "活跃", "adjustment": 2,
-    "breadth": { "upCount": 20, "downCount": 10 },
-    "currentConstituent": true
+    "available": true, "boardCode": "881271", "boardName": "IT服务",
+    "score": 23.1, "state": "退潮", "adjustment": -3,
+    "breadth": { "upCount": 12, "downCount": 30 },
+    "source": "同花顺", "currentConstituent": true
   },
   "consensus": {
-    "total": 9, "longCount": 4, "flatCount": 5,
-    "bullWeightPct": 36.6, "bearWeightPct": 63.4, "label": "策略分歧，等待确认"
+    "total": 9, "longCount": 7, "flatCount": 2,
+    "qualified": 7, "label": "推荐", "grade": "B",
+    "bestStrategy": { "key": "macd", "name": "MACD 趋势", "score": 97 }
   },
-  "topStrategy": { "key": "bollinger", "name": "布林带回归", "weight": 30.5 },
-  "reasons": ["4/9 个策略当前持仓，多头权重 36.6%", "板块情绪活跃 75 分，综合分 49.7 → 51.7（环境 +2）"],
-  "warnings": ["策略信号分歧：4/9 个策略当前持仓"],
+  "topStrategy": { "key": "macd", "name": "MACD 趋势", "score": 97 },
+  "reasons": [
+    "九策略共识 69.9 分（推荐），命中 7/9，最佳策略 MACD 趋势 97 分",
+    "MACD 红柱",
+    "板块情绪退潮 23.1 分，仅作风险提示（-3 分），不改变榜单共识评级"
+  ],
+  "warnings": ["九策略分歧：2 个策略未达到各自评分门槛"],
   "strategies": [{
-    "key": "ma_cross", "name": "双均线趋势", "weight": 7.5,
+    "key": "macd", "name": "MACD 趋势",
+    "hitScore": 97, "minScore": 56, "passed": true,
     "signal": "long", "signalLabel": "持仓", "fresh": false,
     "metrics": {
-      "winRate": 60, "totalReturn": 38.2, "annualized": 21.4,
+      "winRate": 38.5, "totalReturn": 94.2, "annualized": 21.4,
       "maxDrawdown": -18.6, "sharpe": 1.1, "profitFactor": 2.3,
       "closedTrades": 10, "tradeCount": 21, "exposure": 63.4, "benchmarkReturn": 25.1
     }
   }],
-  "updatedAt": "2026-11-20T15:02:00.000Z"
+  "updatedAt": "2026-11-23T07:02:00.000Z"
 }
 ```
 
-`action` 取值：`buy` 买入、`hold` 持有、`sell` 卖出。权重按回测质量前 3 策略等权分配（8 个可交易策略参与排名，缠论不参与），其余策略权重为 0；前 3 策略中任一策略当天出现新买入信号且该策略训练胜率 ≥ 50% 时返回 `buy`，前 3 全部空仓时返回 `sell` 并冷却 5 个交易日；RSI14 > 75 或 10 日涨幅 > 15% 时触发过热锁定并强制 `sell`，RSI14 < 50 且 10 日涨幅 < 5% 后解除，`overheat` 字段返回当前锁定状态、RSI 与 10 日涨幅。`score` 为加权综合分，仅用于展示强弱。
+`action` 取值：`buy` 买入、`hold` 持有、`watch` 观望、`sell` 卖出。评级阈值与荐股榜一致：`score ≥ 72` 返回 `buy`、`64–72` 返回 `hold`、`56–64` 返回 `watch`、`< 56` 返回 `sell`；`score` 即榜单口径的九策略共识分，`label` / `grade` 与榜单标签对应。`strategies[].hitScore` 为该策略在榜单公式中的当日得分，`passed` 表示是否达到 `minScore`；`metrics` 为历史回测参考值。`overheat` 返回 RSI14、10 日涨幅与是否过热，仅作提示。
 
 ## GET /api/intraday
 
