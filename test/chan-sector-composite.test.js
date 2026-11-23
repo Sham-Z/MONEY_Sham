@@ -165,8 +165,10 @@ test('compositeFromBars 相同测试起点下保持 daily 历史及滚动训练�
     const weightSum = result.weights.reduce((sum, row) => sum + row.weight, 0);
     assert.ok(Math.abs(weightSum - 100) < 0.001);
     assert.equal(result.weights.filter((row) => row.weight > 0).length, 3);
-    assert.equal(result.composite.buyThreshold, 56);
-    assert.equal(result.composite.sellThreshold, 44);
+    assert.equal(result.weights.find((row) => row.key === 'chan_theory').weight, 0);
+    assert.equal(result.composite.cooldownDays, 5);
+    assert.match(result.composite.entryRule, /新买入信号/);
+    assert.match(result.composite.exitRule, /全部空仓/);
     assert.equal(result.walkForward.rebalanceEvery, 20);
     assert.equal(result.walkForward.rebalanceCount, Math.ceil(days / 20));
 
