@@ -326,6 +326,26 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, result);
     }
 
+    if (pathname === '/api/signals' && req.method === 'GET') {
+      const optionalNumber = (key) => {
+        const raw = url.searchParams.get(key);
+        return raw == null || raw === '' ? undefined : Number(raw);
+      };
+      const result = await quant.signalBoard({
+        limit: Number(url.searchParams.get('limit')) || 10,
+        scanCount: Number(url.searchParams.get('scanCount')) || 600,
+        candidates: Number(url.searchParams.get('candidates')) || 90,
+        force: url.searchParams.get('refresh') === '1',
+        filters: {
+          minPrice: optionalNumber('minPrice'),
+          maxPrice: optionalNumber('maxPrice'),
+          minMarketCap: optionalNumber('minMarketCap'),
+          maxMarketCap: optionalNumber('maxMarketCap'),
+        },
+      });
+      return sendJson(res, 200, result);
+    }
+
     if (pathname === '/api/stock/advice' && req.method === 'GET') {
       const result = await advisor.strategyAdvice(
         url.searchParams.get('code'),

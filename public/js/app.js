@@ -95,6 +95,7 @@ const state = {
     quoteStale: false,
     filters: { minPrice: 2, maxPrice: 50, minMarketCap: 0, maxMarketCap: 200 },
   },
+  signals: { data: null, loading: false, timer: null },
   trade: { account: null, prices: {}, timer: null },
   portfolio: { holdings: [], diagnosis: null, timer: null, loading: false },
 };
@@ -683,6 +684,84 @@ function syncPicksAutoRefresh() {
   if (!picksRouteActive()) return;
   runPicksAutoRefresh();
   state.picks.timer = setInterval(runPicksAutoRefresh, 4_000);
+}
+
+/* ------------------------------ 实时买卖 ------------------------------ */
+
+function signalsRouteActive() {
+  return (location.hash || '#/market').startsWith('#/signals');
+}
+
+function stopSignalsAutoRefresh() {
+  clearInterval(state.signals.timer);
+  state.signals.timer = null;
+}
+
+function syncSignalsAutoRefresh() {
+  stopSignalsAutoRefresh();
+  if (!signalsRouteActive() || document.hidden) return;
+  loadSignals(true);
+  state.signals.timer = setInterval(() => {
+    if (!document.hidden) loadSignals(true);
+  }, 60_000);
+}
+
+async function loadSignals(silent = false, force = false) {
+  if (state.signals.loading) return;
+  state.signals.loading = true;
+  if (!state.signals.data) {
+    const html = '<tr><td colspan="6" class="empty">正在扫描候选池并运行 9 个策略…</td></tr>';
+    $('#signalsBuyTable tbody').innerHTML = html;
+    $('#signalsSellTable tbody').innerHTML = html;
+  }
+  const query = new URLSearchParams({ limit: '10', ...state.picks.filters });
+  if (force) query.set('refresh', '1');
+  try {
+    const data = await apiGet(`/api/signals?${query}`);
+    state.signals.data = data;
+    renderSignals(data);
+    if (force) toast('实时买卖信号已刷新');
+  } catch (err) {
+    if (!state.signals.data) {
+      const html = `<tr><td colspan="6" class="empty">信号加载失败：${esc(err.message)}</td></tr>`;
+      $('#signalsBuyTable tbody').innerHTML = html;
+      $('#signalsSellTable tbody').innerHTML = html;
+      $('#signalsUpdated').textContent = '加载失败';
+    }
+    if (force) toast(`信号刷新失败：${err.message}`, true);
+  } finally {
+    state.signals.loading = false;
+  }
+}
+
+function renderSignals(data) {
+  const m = data.meta || {};
+  const time = new Date(m.asOf || Date.now()).toLocaleTimeString('zh-CN', { hour12: false });
+  $('#signalsUpdated').textContent = `${time} 更新 · 候选 ${m.candidates ?? 0} 只`;
+  $('#signalsBuyHint').textContent = `当日新翻多 · 共 ${m.buyTotal ?? 0} 只`;
+  $('#signalsSellHint').textContent = `当日新翻空 · 共 ${m.sellTotal ?? 0} 只`;
+  const rowsHtml = (list, tone) => {
+    if (!list.length) {
+      return `<tr><td colspan="6" class="empty">暂无${tone === 'buy' ? '买点' : '卖点'}信号</td></tr>`;
+    }
+    return list
+      .map(
+        (r, i) => `<tr data-code="${esc(r.code)}">
+        <td class="num" style="color:var(--dim)">${i + 1}</td>
+        <td><div class="name-cell"><b>${esc(r.name)}</b><span>${esc(r.code)}</span></div></td>
+        <td class="num ${cls(r.changePct)}">${fmt.price(r.price)}</td>
+        <td class="num ${cls(r.changePct)}">${fmt.pct(r.changePct)}</td>
+        <td class="num">${r.consensus.toFixed(1)}</td>
+        <td><div class="sig-list">${(tone === 'buy' ? r.buyStrategies : r.sellStrategies)
+          .map((n) => `<span class="sig ${tone}">${esc(n)}</span>`)
+          .join('')}</div></td>
+      </tr>`,
+      )
+      .join('');
+  };
+  $('#signalsBuyTable tbody').innerHTML = rowsHtml(data.buys || [], 'buy');
+  $('#signalsSellTable tbody').innerHTML = rowsHtml(data.sells || [], 'sell');
+  if (data.disclaimer) $('#signalsNote').textContent = `${data.disclaimer} 每 60 秒自动重算。`;
 }
 
 /* ------------------------------ 个股分析 ------------------------------ */
@@ -1540,6 +1619,7 @@ function setView(view) {
   const titles = {
     market: '行情总览',
     picks: '荐股榜单',
+    signals: '实时买卖',
     screen: '量化选股',
     portfolio: '持仓信息',
     stock: '个股分析',
@@ -1550,6 +1630,7 @@ function setView(view) {
   if (view === 'stock') syncIntradayAutoRefresh();
   else stopIntradayAutoRefresh();
   syncPicksAutoRefresh();
+  syncSignalsAutoRefresh();
   if (view === 'trade') {
     refreshPrices();
     clearInterval(state.trade.timer);
@@ -1576,7 +1657,7 @@ function route() {
   const hash = location.hash || '#/market';
   const [path, query] = hash.replace(/^#\//, '').split('?');
   const params = new URLSearchParams(query || '');
-  const view = ['market', 'picks', 'screen', 'portfolio', 'stock', 'trade', 'docs'].includes(path) ? path : 'market';
+  const view = ['market', 'picks', 'signals', 'screen', 'portfolio', 'stock', 'trade', 'docs'].includes(path) ? path : 'market';
 
   if (view === 'stock') {
     setView('stock');
@@ -1609,6 +1690,7 @@ function bindEvents() {
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) return;
     if (picksRouteActive()) runPicksAutoRefresh();
+    if (signalsRouteActive()) loadSignals(true);
     if (location.hash.startsWith('#/stock') && state.stock.period === 'min' && state.stock.code) {
       loadIntraday(state.stock.code, { silent: true });
     }
@@ -1641,7 +1723,7 @@ function bindEvents() {
 
   // 榜单 / 表格跳转
   document.addEventListener('click', (e) => {
-    const row = e.target.closest('.board-row, #quoteTable tbody tr, #screenTable tbody tr, #picksTable tbody tr, .pick-mini');
+    const row = e.target.closest('.board-row, #quoteTable tbody tr, #screenTable tbody tr, #picksTable tbody tr, #signalsBuyTable tbody tr, #signalsSellTable tbody tr, .pick-mini');
     if (!row || row.querySelector('.empty')) return;
     const code = row.dataset.code;
     if (code) setStockRoute(code);
@@ -1649,6 +1731,7 @@ function bindEvents() {
 
   // 荐股榜单
   $('#refreshPicks').addEventListener('click', () => loadPicks(true));
+  $('#refreshSignals').addEventListener('click', () => loadSignals(false, true));
   $('#picksFilters').addEventListener('submit', (e) => {
     e.preventDefault();
     const next = {};

@@ -6,7 +6,7 @@
 <title>MONEY · A股量化终端</title>
 <meta name="description" content="接入腾讯财经、新浪财经、东方财富数据的 A 股量化选股与模拟交易终端" />
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%230b1220'/%3E%3Cpath d='M20 70 L38 46 L52 58 L80 26' stroke='%23ffb547' stroke-width='9' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
-<link rel="stylesheet" href="/css/app.css?v=1.1.0" />
+<link rel="stylesheet" href="/css/app.css?v=1.2.0" />
 </head>
 <body>
 <div class="bg-grid" aria-hidden="true"></div>
@@ -29,6 +29,7 @@
 <nav class="tabs" id="tabs">
   <a href="#/market" data-view="market">行情总览</a>
   <a href="#/picks" data-view="picks">荐股榜单</a>
+  <a href="#/signals" data-view="signals">实时买卖</a>
   <a href="#/screen" data-view="screen">量化选股</a>
   <a href="#/portfolio" data-view="portfolio">持仓信息</a>
   <a href="#/stock" data-view="stock">个股分析</a>
@@ -169,6 +170,55 @@
       </div>
       <p class="fineprint" id="picksNote">榜单行情每 4 秒自动更新，完整九策略排名每 60 秒重算；由公开行情与财报数据计算，仅供研究参考，不构成投资建议。</p>
     </div>
+  </section>
+
+  <!-- 实时买卖 -->
+  <section class="view" id="view-signals">
+    <div class="picks-hero card">
+      <div class="picks-hero-text">
+        <span class="eyebrow">LIVE SIGNALS</span>
+        <h2>实时买卖点</h2>
+        <p>沿用九策略日线信号：任一策略当日由空翻多记为买点，由多翻空记为卖点。买点、卖点各展示候选池内信号最集中的 10 只股票，点击可进入个股分析。</p>
+      </div>
+      <div class="picks-hero-actions">
+        <span class="hint" id="signalsUpdated">尚未加载</span>
+        <button class="btn primary" id="refreshSignals">刷新信号</button>
+      </div>
+    </div>
+
+    <div class="signal-grid">
+      <div class="card section-card">
+        <div class="card-head">
+          <h3 class="up">买点 · Top 10</h3>
+          <span class="hint" id="signalsBuyHint">当日新翻多</span>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table" id="signalsBuyTable">
+            <thead><tr>
+              <th>#</th><th>代码 / 名称</th><th class="num">现价</th><th class="num">涨跌幅</th>
+              <th class="num">综合分</th><th>触发策略</th>
+            </tr></thead>
+            <tbody><tr><td colspan="6" class="empty">正在扫描候选池并运行 9 个策略…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card section-card">
+        <div class="card-head">
+          <h3 class="down">卖点 · Top 10</h3>
+          <span class="hint" id="signalsSellHint">当日新翻空</span>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table" id="signalsSellTable">
+            <thead><tr>
+              <th>#</th><th>代码 / 名称</th><th class="num">现价</th><th class="num">涨跌幅</th>
+              <th class="num">综合分</th><th>触发策略</th>
+            </tr></thead>
+            <tbody><tr><td colspan="6" class="empty">正在扫描候选池并运行 9 个策略…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <p class="fineprint" id="signalsNote">信号每 60 秒重算，行情随当日盘中更新；仅供研究参考，不构成投资建议。</p>
   </section>
 
   <!-- 量化选股 -->

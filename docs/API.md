@@ -220,6 +220,37 @@
 }
 ```
 
+## GET /api/signals
+
+实时买卖点。复用 `/api/picks` 的候选池扫描与 60 秒缓存，统计每个策略在最后一根日线上是否发生多空翻转：当日由空翻多记为买点，由多翻空记为卖点；RSI14 > 75 或 10 日涨幅 > 15% 额外计入「过热止盈」卖点。买点、卖点各按触发策略数排序返回前 `limit` 只，同一只股票不会同时出现在两侧。
+
+| 参数 | 默认 | 说明 |
+| --- | --- | --- |
+| `limit` | 10 | 每侧返回条数（3–20） |
+| `scanCount` / `candidates` | 600 / 90 | 与 `/api/picks` 相同，参与缓存 key |
+| `minPrice` / `maxPrice` | 2 / 50 | 股价区间，单位为元 |
+| `minMarketCap` / `maxMarketCap` | 0 / 200 | 总市值区间，单位为亿元 |
+| `refresh` | - | `1` 时强制重新扫描 |
+
+```json
+{
+  "ok": true,
+  "buys": [{
+    "code": "603305", "name": "旭升集团", "price": 11.39, "changePct": 9.73,
+    "consensus": 64.1, "label": "推荐", "grade": "B",
+    "buyCount": 2, "sellCount": 0,
+    "buyStrategies": ["动量轮动", "量价共振"], "sellStrategies": []
+  }],
+  "sells": [{
+    "code": "002042", "name": "华孚时尚", "price": 6.2, "changePct": -1.2,
+    "consensus": 48.2, "label": "关注", "grade": "C",
+    "buyCount": 0, "sellCount": 2,
+    "buyStrategies": [], "sellStrategies": ["RSI 超跌反转", "过热止盈"]
+  }],
+  "meta": { "asOf": "2026-11-27T03:19:53.142Z", "candidates": 60, "buyTotal": 19, "sellTotal": 19 }
+}
+```
+
 ## GET /api/stock/advice
 
 个股多策略综合建议。对同一只股票运行统一 9 个策略，并直接复用荐股榜的共识算法：`consensus = 平均分 × 0.72 + 命中占比 × 100 × 0.28`，映射为「买入 / 持有 / 观望 / 卖出」。各策略的回测胜率、区间收益仅作为参考列展示，与榜单的当日命中率不是同一口径。板块情绪与过热只作风险提示，不改变共识评级。行业映射优先使用同花顺行业板块，失败时回退东财 push2 / F10。

@@ -861,3 +861,11 @@ input[type="range"]::-webkit-slider-thumb {
 @media (max-width: 560px) {
   .picks-mini-grid { grid-template-columns: 1fr; }
 }
+
+/* 实时买卖 */
+.signal-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.signal-grid .section-card { margin: 0; }
+.signal-grid .sig-list { max-width: none; }
+@media (max-width: 860px) {
+  .signal-grid { grid-template-columns: 1fr; }
+}
