@@ -178,7 +178,7 @@
       <div class="picks-hero-text">
         <span class="eyebrow">LIVE SIGNALS</span>
         <h2>实时买卖点</h2>
-        <p>沿用九策略日线信号：任一策略当日由空翻多记为买点，由多翻空记为卖点。买点、卖点各展示候选池内信号最集中的 10 只股票，点击可进入个股分析。</p>
+        <p>直接读取当日分时图：每只股票取最新的一个 B/S 点，买点列展示最近一次为 B 的股票，卖点列展示最近一次为 S 的股票，按距今时间倒序各取 10 只。点击可进入个股分析查看完整分时与买卖点。</p>
       </div>
       <div class="picks-hero-actions">
         <span class="hint" id="signalsUpdated">尚未加载</span>
@@ -190,30 +190,30 @@
       <div class="card section-card">
         <div class="card-head">
           <h3 class="up">买点 · Top 10</h3>
-          <span class="hint" id="signalsBuyHint">当日新翻多</span>
+          <span class="hint" id="signalsBuyHint">最新分时点为 B</span>
         </div>
         <div class="table-wrap">
           <table class="data-table" id="signalsBuyTable">
             <thead><tr>
               <th>#</th><th>代码 / 名称</th><th class="num">现价</th><th class="num">涨跌幅</th>
-              <th class="num">综合分</th><th>触发策略</th>
+              <th>分时点</th><th class="num">距今</th><th>触发依据</th>
             </tr></thead>
-            <tbody><tr><td colspan="6" class="empty">正在扫描候选池并运行 9 个策略…</td></tr></tbody>
+            <tbody><tr><td colspan="7" class="empty">正在扫描候选池并计算当日分时买卖点…</td></tr></tbody>
           </table>
         </div>
       </div>
       <div class="card section-card">
         <div class="card-head">
           <h3 class="down">卖点 · Top 10</h3>
-          <span class="hint" id="signalsSellHint">当日新翻空</span>
+          <span class="hint" id="signalsSellHint">最新分时点为 S</span>
         </div>
         <div class="table-wrap">
           <table class="data-table" id="signalsSellTable">
             <thead><tr>
               <th>#</th><th>代码 / 名称</th><th class="num">现价</th><th class="num">涨跌幅</th>
-              <th class="num">综合分</th><th>触发策略</th>
+              <th>分时点</th><th class="num">距今</th><th>触发依据</th>
             </tr></thead>
-            <tbody><tr><td colspan="6" class="empty">正在扫描候选池并运行 9 个策略…</td></tr></tbody>
+            <tbody><tr><td colspan="7" class="empty">正在扫描候选池并计算当日分时买卖点…</td></tr></tbody>
           </table>
         </div>
       </div>

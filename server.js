@@ -331,8 +331,7 @@ const server = http.createServer(async (req, res) => {
         const raw = url.searchParams.get(key);
         return raw == null || raw === '' ? undefined : Number(raw);
       };
-      const result = await quant.signalBoard({
-        limit: Number(url.searchParams.get('limit')) || 10,
+      const codes = await quant.candidateCodes({
         scanCount: Number(url.searchParams.get('scanCount')) || 600,
         candidates: Number(url.searchParams.get('candidates')) || 90,
         force: url.searchParams.get('refresh') === '1',
@@ -342,6 +341,10 @@ const server = http.createServer(async (req, res) => {
           minMarketCap: optionalNumber('minMarketCap'),
           maxMarketCap: optionalNumber('maxMarketCap'),
         },
+      });
+      const result = await intraday.scan(codes, {
+        limit: Number(url.searchParams.get('limit')) || 10,
+        windowMinutes: Number(url.searchParams.get('windowMinutes')) || 30,
       });
       return sendJson(res, 200, result);
     }

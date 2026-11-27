@@ -222,34 +222,37 @@
 
 ## GET /api/signals
 
-实时买卖点。复用 `/api/picks` 的候选池扫描与 60 秒缓存，统计每个策略在最后一根日线上是否发生多空翻转：当日由空翻多记为买点，由多翻空记为卖点；RSI14 > 75 或 10 日涨幅 > 15% 额外计入「过热止盈」卖点。买点、卖点各按触发策略数排序返回前 `limit` 只，同一只股票不会同时出现在两侧。
+实时买卖点，直接来自当日分时图。复用 `/api/picks` 的候选池代码列表，对每只候选并行计算分时（与个股页同一套 9 策略投票、高位禁买/低位禁卖约束），取最新的一个 B/S 点：最近一次为 B 的进入买点列，最近一次为 S 的进入卖点列，并按距今分钟数倒序返回。
 
 | 参数 | 默认 | 说明 |
 | --- | --- | --- |
-| `limit` | 10 | 每侧返回条数（3–20） |
-| `scanCount` / `candidates` | 600 / 90 | 与 `/api/picks` 相同，参与缓存 key |
+| `limit` | 10 | 每侧返回条数（1–20） |
+| `windowMinutes` | 30 | 距今不超过该分钟数的标记记为 `fresh`（5–120） |
+| `scanCount` / `candidates` | 600 / 90 | 与 `/api/picks` 相同，参与候选池缓存 key |
 | `minPrice` / `maxPrice` | 2 / 50 | 股价区间，单位为元 |
 | `minMarketCap` / `maxMarketCap` | 0 / 200 | 总市值区间，单位为亿元 |
-| `refresh` | - | `1` 时强制重新扫描 |
+| `refresh` | - | `1` 时强制重新扫描候选池 |
 
 ```json
 {
   "ok": true,
   "buys": [{
-    "code": "603305", "name": "旭升集团", "price": 11.39, "changePct": 9.73,
-    "consensus": 64.1, "label": "推荐", "grade": "B",
-    "buyCount": 2, "sellCount": 0,
-    "buyStrategies": ["动量轮动", "量价共振"], "sellStrategies": []
+    "code": "600715", "name": "文投控股", "price": 2.74, "changePct": 3.4,
+    "side": "buy", "sideLabel": "B", "time": "11:02", "ageMinutes": 28, "fresh": true,
+    "score": 3.5, "count": 3,
+    "reasons": ["MACD 趋势·MACD 金叉", "动量轮动·10 分钟动量转正", "60 日放量突破·放量突破 20 分钟高点"]
   }],
   "sells": [{
-    "code": "002042", "name": "华孚时尚", "price": 6.2, "changePct": -1.2,
-    "consensus": 48.2, "label": "关注", "grade": "C",
-    "buyCount": 0, "sellCount": 2,
-    "buyStrategies": [], "sellStrategies": ["RSI 超跌反转", "过热止盈"]
+    "code": "002226", "name": "江南化工", "price": 5.71, "changePct": 0.18,
+    "side": "sell", "sideLabel": "S", "time": "11:28", "ageMinutes": 2, "fresh": true,
+    "score": 3.5, "count": 3,
+    "reasons": ["RSI 超跌反转·RSI 超买回落", "布林带回归·收回布林上轨", "KDJ 超跌·KDJ 高位死叉"]
   }],
-  "meta": { "asOf": "2026-11-27T03:19:53.142Z", "candidates": 60, "buyTotal": 19, "sellTotal": 19 }
+  "meta": { "asOf": "2026-11-27T03:34:51.984Z", "scanned": 60, "withMarker": 55, "buyTotal": 17, "sellTotal": 38, "windowMinutes": 30 }
 }
 ```
+
+`time` 为分时标记时间；`ageMinutes` 为最新分钟快照与标记之间的分钟根数差；`fresh=false` 表示超过 `windowMinutes`，前端会淡化展示。
 
 ## GET /api/stock/advice
 

@@ -710,7 +710,7 @@ async function loadSignals(silent = false, force = false) {
   if (state.signals.loading) return;
   state.signals.loading = true;
   if (!state.signals.data) {
-    const html = '<tr><td colspan="6" class="empty">正在扫描候选池并运行 9 个策略…</td></tr>';
+    const html = '<tr><td colspan="7" class="empty">正在扫描候选池并计算当日分时买卖点…</td></tr>';
     $('#signalsBuyTable tbody').innerHTML = html;
     $('#signalsSellTable tbody').innerHTML = html;
   }
@@ -723,7 +723,7 @@ async function loadSignals(silent = false, force = false) {
     if (force) toast('实时买卖信号已刷新');
   } catch (err) {
     if (!state.signals.data) {
-      const html = `<tr><td colspan="6" class="empty">信号加载失败：${esc(err.message)}</td></tr>`;
+    const html = `<tr><td colspan="7" class="empty">信号加载失败：${esc(err.message)}</td></tr>`;
       $('#signalsBuyTable tbody').innerHTML = html;
       $('#signalsSellTable tbody').innerHTML = html;
       $('#signalsUpdated').textContent = '加载失败';
@@ -737,22 +737,23 @@ async function loadSignals(silent = false, force = false) {
 function renderSignals(data) {
   const m = data.meta || {};
   const time = new Date(m.asOf || Date.now()).toLocaleTimeString('zh-CN', { hour12: false });
-  $('#signalsUpdated').textContent = `${time} 更新 · 候选 ${m.candidates ?? 0} 只`;
-  $('#signalsBuyHint').textContent = `当日新翻多 · 共 ${m.buyTotal ?? 0} 只`;
-  $('#signalsSellHint').textContent = `当日新翻空 · 共 ${m.sellTotal ?? 0} 只`;
+  $('#signalsUpdated').textContent = `${time} 更新 · 扫描 ${m.scanned ?? 0} 只 · 出现分时点 ${m.withMarker ?? 0} 只`;
+  $('#signalsBuyHint').textContent = `最新分时点为 B · 共 ${m.buyTotal ?? 0} 只`;
+  $('#signalsSellHint').textContent = `最新分时点为 S · 共 ${m.sellTotal ?? 0} 只`;
   const rowsHtml = (list, tone) => {
     if (!list.length) {
-      return `<tr><td colspan="6" class="empty">暂无${tone === 'buy' ? '买点' : '卖点'}信号</td></tr>`;
+      return `<tr><td colspan="7" class="empty">暂无${tone === 'buy' ? '买点' : '卖点'}信号</td></tr>`;
     }
     return list
       .map(
-        (r, i) => `<tr data-code="${esc(r.code)}">
+        (r, i) => `<tr data-code="${esc(r.code)}" class="${r.fresh ? '' : 'stale'}">
         <td class="num" style="color:var(--dim)">${i + 1}</td>
         <td><div class="name-cell"><b>${esc(r.name)}</b><span>${esc(r.code)}</span></div></td>
         <td class="num ${cls(r.changePct)}">${fmt.price(r.price)}</td>
         <td class="num ${cls(r.changePct)}">${fmt.pct(r.changePct)}</td>
-        <td class="num">${r.consensus.toFixed(1)}</td>
-        <td><div class="sig-list">${(tone === 'buy' ? r.buyStrategies : r.sellStrategies)
+        <td><span class="sig ${tone}">${esc(r.sideLabel)}</span> <span style="font-family:var(--mono)">${esc(r.time)}</span></td>
+        <td class="num">${r.ageMinutes <= 0 ? '刚刚' : `${r.ageMinutes} 分钟前`}</td>
+        <td><div class="sig-list">${(r.reasons || [])
           .map((n) => `<span class="sig ${tone}">${esc(n)}</span>`)
           .join('')}</div></td>
       </tr>`,
